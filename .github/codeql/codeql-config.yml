@@ -1,0 +1,16 @@
+name: "CodeQL Config"
+
+queries:
+  - uses: security-and-quality
+
+paths-ignore:
+  - node_modules
+  - dist
+  - build
+  - target
+  - .git
+
+paths:
+  - backend/src
+  - frontend/src
+  - contracts/src
