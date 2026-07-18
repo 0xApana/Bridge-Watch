@@ -1,4 +1,4 @@
-import jwt from "jsonwebtoken";
+import * as jwt from "jsonwebtoken";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
