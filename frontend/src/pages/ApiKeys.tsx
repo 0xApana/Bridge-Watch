@@ -20,6 +20,7 @@ const DEFAULT_FORM = {
   scopes: ["jobs:read", "jobs:trigger"],
   rateLimitPerMinute: 120,
   expiresInDays: 30,
+  enableOAuth: false,
 };
 
 export default function ApiKeys() {
@@ -29,6 +30,8 @@ export default function ApiKeys() {
   );
   const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
   const [generatedKey, setGeneratedKey] = useState<string | null>(null);
+  const [generatedClientId, setGeneratedClientId] = useState<string | null>(null);
+  const [generatedClientSecret, setGeneratedClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState(DEFAULT_FORM);
@@ -83,6 +86,8 @@ export default function ApiKeys() {
     try {
       const response = await createApiKey(adminToken, form);
       setGeneratedKey(response.apiKey);
+      setGeneratedClientId(response.clientId ?? null);
+      setGeneratedClientSecret(response.clientSecret ?? null);
       setForm(DEFAULT_FORM);
       await loadKeys();
     } catch (createError) {
@@ -294,17 +299,67 @@ export default function ApiKeys() {
                 />
               </label>
             </div>
+
+            <label className="flex items-center gap-3 rounded-2xl border border-stellar-border bg-stellar-dark px-4 py-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.enableOAuth}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    enableOAuth: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 rounded border-stellar-border bg-stellar-dark text-stellar-blue focus:ring-2 focus:ring-stellar-blue focus:ring-offset-0"
+              />
+              <div className="flex-1">
+                <span className="block text-sm font-medium text-white">
+                  Enable OAuth2 Client Credentials
+                </span>
+                <span className="block text-xs text-stellar-text-secondary mt-0.5">
+                  Generate client ID and secret for token-based authentication
+                </span>
+              </div>
+            </label>
           </div>
 
           <div className="mt-6 flex flex-col gap-4">
             {generatedKey && (
-              <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">
-                  Generated key
+              <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 space-y-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">
+                    Generated API Key
+                  </p>
+                  <code className="mt-2 block overflow-x-auto text-sm text-white">
+                    {generatedKey}
+                  </code>
+                </div>
+                {generatedClientId && generatedClientSecret && (
+                  <>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">
+                        Client ID
+                      </p>
+                      <code className="mt-2 block overflow-x-auto text-sm text-white">
+                        {generatedClientId}
+                      </code>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-emerald-300">
+                        Client Secret
+                      </p>
+                      <code className="mt-2 block overflow-x-auto text-sm text-white">
+                        {generatedClientSecret}
+                      </code>
+                    </div>
+                    <p className="text-xs text-emerald-300/80">
+                      Use these credentials with POST /api/v1/oauth/token to get JWT access tokens
+                    </p>
+                  </>
+                )}
+                <p className="text-xs text-emerald-300/80">
+                  Save these credentials securely. They will not be shown again.
                 </p>
-                <code className="mt-2 block overflow-x-auto text-sm text-white">
-                  {generatedKey}
-                </code>
               </div>
             )}
 

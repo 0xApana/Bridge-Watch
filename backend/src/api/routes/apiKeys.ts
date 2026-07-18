@@ -7,6 +7,7 @@ interface CreateApiKeyBody {
   scopes?: string[];
   rateLimitPerMinute?: number;
   expiresInDays?: number;
+  enableOAuth?: boolean;
 }
 
 interface ExtendApiKeyBody {
@@ -26,7 +27,7 @@ export async function apiKeysRoutes(server: FastifyInstance) {
     "/",
     { preHandler: requireAdmin },
     async (request, reply) => {
-      const { name, scopes = [], rateLimitPerMinute, expiresInDays } = request.body;
+      const { name, scopes = [], rateLimitPerMinute, expiresInDays, enableOAuth } = request.body;
       if (!name?.trim()) {
         return reply.code(400).send({
           error: "Bad Request",
@@ -45,6 +46,7 @@ export async function apiKeysRoutes(server: FastifyInstance) {
         rateLimitPerMinute,
         expiresAt,
         createdBy: request.apiKeyAuth?.name ?? "admin",
+        enableOAuth,
       });
 
       return reply.code(201).send(result);
