@@ -1,5 +1,5 @@
 import { Worker, Queue } from "bullmq";
-import { config } from "../config/index.js";
+import { config, HEALTH_SCORE_THRESHOLD } from "../config/index.js";
 import { HealthService, type HealthScore } from "../services/health.service.js";
 import { logger } from "../utils/logger.js";
 import { alertRoutingService, type RouteableAlert } from "../services/alertRouting.service.js";
@@ -29,7 +29,7 @@ function buildDeterioratingAlert(score: HealthScore): RouteableAlert {
     sourceType: "health_deterioration",
     severity: score.overallScore < 0.3 ? "critical" : "high",
     triggeredValue: score.overallScore,
-    threshold: config.HEALTH_SCORE_THRESHOLD ?? 0.5,
+    threshold: HEALTH_SCORE_THRESHOLD ?? 0.5,
     metric: "overall_health_score",
   };
 }
@@ -40,10 +40,10 @@ async function routeDeterioratingAlerts(scores: HealthScore[]): Promise<void> {
     const dedupEvent: Omit<AlertEvent, "eventId"> = {
       ruleId: `health-check-${score.symbol}`,
       assetCode: score.symbol,
-      alertType: "health_deterioration",
+      alertType: "health_score_change",
       priority: score.overallScore < 0.3 ? "critical" : "high",
       triggeredValue: score.overallScore,
-      threshold: config.HEALTH_SCORE_THRESHOLD ?? 0.5,
+      threshold: HEALTH_SCORE_THRESHOLD ?? 0.5,
       metric: "overall_health_score",
       webhookDelivered: false,
       onChainEventId: null,

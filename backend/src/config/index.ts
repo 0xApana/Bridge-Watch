@@ -231,3 +231,11 @@ if (!parsed.success) {
 }
 
 export const config: EnvConfig = parsed.data;
+
+export const BRIDGE_MISMATCH_THRESHOLD = process.env.BRIDGE_MISMATCH_THRESHOLD 
+  ? parseFloat(process.env.BRIDGE_MISMATCH_THRESHOLD) 
+  : 0.01;
+
+export const HEALTH_SCORE_THRESHOLD = process.env.HEALTH_SCORE_THRESHOLD 
+  ? parseFloat(process.env.HEALTH_SCORE_THRESHOLD) 
+  : 0.5;

@@ -8,10 +8,8 @@ import {
   getServiceAnnotationAudit,
 } from "../services/api";
 import type {
-  ServiceAnnotation,
   CreateServiceAnnotationInput,
   UpdateServiceAnnotationInput,
-  ServiceAnnotationAuditEntry,
 } from "../types";
 
 const annotationsKey = "service-annotations" as const;
