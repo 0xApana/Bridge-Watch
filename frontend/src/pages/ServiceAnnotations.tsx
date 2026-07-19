@@ -209,7 +209,7 @@ export default function ServiceAnnotations() {
   } | null>(null);
   const [author, setAuthor] = useState("operator");
 
-  const { data: annotations, isLoading, error, refetch } = useServiceAnnotations();
+  const { data: annotations = [], isLoading, error, refetch } = useServiceAnnotations();
   const createMutation = useCreateServiceAnnotation();
   const updateMutation = useUpdateServiceAnnotation();
   const deleteMutation = useDeleteServiceAnnotation();

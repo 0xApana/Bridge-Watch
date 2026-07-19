@@ -245,13 +245,10 @@ if (!parsed.success) {
 
 export const config: EnvConfig = parsed.data;
 
-// Register the Wormhole-bridged wrapped asset for Stellar supply lookups, but
-// only once a real issuer is configured — never assume a placeholder value.
-if (config.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER) {
-  const wormholeAsset: StellarAssetConfig = {
-    code: config.WORMHOLE_WATCHED_ASSET_SYMBOL,
-    issuer: config.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER,
-  };
-  validateIssuerAddress(wormholeAsset);
-  SUPPORTED_ASSETS.push(wormholeAsset);
-}
+export const BRIDGE_MISMATCH_THRESHOLD = process.env.BRIDGE_MISMATCH_THRESHOLD 
+  ? parseFloat(process.env.BRIDGE_MISMATCH_THRESHOLD) 
+  : 0.01;
+
+export const HEALTH_SCORE_THRESHOLD = process.env.HEALTH_SCORE_THRESHOLD 
+  ? parseFloat(process.env.HEALTH_SCORE_THRESHOLD) 
+  : 0.5;
