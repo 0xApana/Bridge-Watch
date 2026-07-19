@@ -6,6 +6,8 @@ const BATCH_INTERVAL_MS = 120;
 const MAX_BATCH_SIZE = 20;
 const MESSAGE_RATE_LIMIT_WINDOW_MS = 1000;
 const MAX_MESSAGES_PER_WINDOW = 20;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
 
 export type WebsocketMessageType =
   | "price_update"
@@ -61,6 +63,8 @@ export interface WebsocketReplayMetrics {
 
 interface SocketConnection {
   send: (message: string) => void;
+  ping(data?: Buffer): void;
+  terminate(): void;
   on: (event: string, callback: (...args: unknown[]) => void) => void;
   readyState?: number;
 }
@@ -76,6 +80,7 @@ interface ClientState {
   pendingAcks: Map<string, number>;
   rateLimitWindowStart: number;
   rateLimitCount: number;
+  pendingPing: boolean;
 }
 
 interface QueuedMessage {
@@ -104,9 +109,11 @@ export class WebsocketService {
   };
   private queue: QueuedMessage[] = [];
   private batchTimer: ReturnType<typeof setInterval>;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   private constructor() {
     this.batchTimer = setInterval(() => this.flushQueue(), BATCH_INTERVAL_MS);
+    this.startHeartbeat();
   }
 
   public static getInstance(): WebsocketService {
@@ -126,6 +133,8 @@ export class WebsocketService {
       existing.lastSeen = now;
       existing.rateLimitWindowStart = now;
       existing.rateLimitCount = 0;
+      existing.pendingPing = false;
+      this.registerSocketHandlers(existing, socket);
       this.sendSystem(socket, {
         message: "resumed",
         clientId: existing.id,
@@ -147,9 +156,12 @@ export class WebsocketService {
       pendingAcks: new Map(),
       rateLimitWindowStart: now,
       rateLimitCount: 0,
+      pendingPing: false,
     };
 
     this.clients.set(clientId, client);
+    this.registerSocketHandlers(client, socket);
+
     this.sendSystem(socket, {
       message: "connected",
       clientId,
@@ -162,9 +174,29 @@ export class WebsocketService {
   public removeClient(clientId: string): void {
     const client = this.clients.get(clientId);
     if (!client) return;
+    this.cleanupSubscriptions(client);
     client.presence = "offline";
     client.socket = undefined;
-    client.lastSeen = Date.now();
+    // Intentionally do NOT update lastSeen so the heartbeat sweep can
+    // detect and purge stale clients that silently disconnected.
+  }
+
+  private registerSocketHandlers(client: ClientState, socket: SocketConnection): void {
+    socket.on("pong", () => {
+      client.lastSeen = Date.now();
+      client.pendingPing = false;
+    });
+
+    socket.on("close", () => {
+      this.removeClient(client.id);
+    });
+  }
+
+  public touchClient(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.lastSeen = Date.now();
+    }
   }
 
   public subscribe(clientId: string, topic: string, filter: Record<string, unknown> = {}): void {
@@ -483,6 +515,54 @@ export class WebsocketService {
     this.history.delete(topic);
   }
 
+  private cleanupSubscriptions(client: ClientState): void {
+    for (const topic of client.subscriptions) {
+      const subscribers = this.topicSubscribers.get(topic);
+      subscribers?.delete(client.id);
+      if (subscribers && subscribers.size === 0) {
+        this.topicSubscribers.delete(topic);
+      }
+    }
+    client.subscriptions.clear();
+    client.filters.clear();
+  }
+
+  private startHeartbeat(): void {
+    this.heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+
+      for (const [clientId, client] of this.clients) {
+        if (client.pendingPing) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[WebsocketService] Client ${clientId} missed pong – terminating connection`,
+          );
+          client.socket?.terminate();
+          this.cleanupSubscriptions(client);
+          this.clients.delete(clientId);
+          continue;
+        }
+
+        const cutoffMs = now - (HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS);
+        if (client.lastSeen < cutoffMs) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[WebsocketService] Client ${clientId} heartbeat timeout – terminating connection`,
+          );
+          client.socket?.terminate();
+          this.cleanupSubscriptions(client);
+          this.clients.delete(clientId);
+          continue;
+        }
+
+        if (client.socket && client.presence === "online") {
+          client.pendingPing = true;
+          client.socket.ping();
+        }
+      }
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
   private sendMessage(connection: SocketConnection, payload: unknown): void {
     try {
       connection.send(JSON.stringify(payload));
@@ -493,5 +573,15 @@ export class WebsocketService {
 
   private sendSystem(connection: SocketConnection, payload: Record<string, unknown>): void {
     this.sendMessage(connection, { type: "system", ...payload });
+  }
+
+  public shutdown(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.batchTimer) {
+      clearInterval(this.batchTimer);
+    }
   }
 }

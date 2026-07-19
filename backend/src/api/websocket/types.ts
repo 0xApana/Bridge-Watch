@@ -273,6 +273,13 @@ export interface ClientState {
   windowStart: number;
   /** Remote IP address of the client. */
   ip: string;
+  /**
+   * Set to `true` when a WebSocket-protocol ping has been sent and we are
+   * waiting for the corresponding pong.  Cleared when a pong arrives or the
+   * connection is terminated.  Used by the heartbeat sweep to detect clients
+   * that silently disappeared (e.g. mobile network handoff without TCP close).
+   */
+  pendingPing: boolean;
 }
 
 // ─── Metrics ──────────────────────────────────────────────────────────────────
