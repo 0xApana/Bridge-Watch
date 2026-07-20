@@ -23,8 +23,11 @@ function extractBearerToken(authHeader: string | string[] | undefined): string |
     return null;
   }
 
-  const match = header.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1] : null;
+  if (header.toLowerCase().startsWith("bearer ")) {
+    return header.slice(7).trim();
+  }
+  
+  return null;
 }
 
 function hasRequiredScopes(granted: string[], required: string[]): boolean {

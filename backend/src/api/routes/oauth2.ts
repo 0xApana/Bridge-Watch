@@ -31,6 +31,12 @@ export async function oauth2Routes(server: FastifyInstance) {
   server.post<{ Body: TokenRequestBody }>(
     "/token",
     {
+      config: {
+        rateLimit: {
+          max: 5,
+          timeWindow: "15 minutes",
+        },
+      },
       schema: {
         description: "OAuth2 Client Credentials Flow - Issue access token",
         tags: ["OAuth2"],
