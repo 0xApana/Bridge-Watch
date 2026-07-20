@@ -172,7 +172,6 @@ export async function oauth2Routes(server: FastifyInstance) {
         logger.info(
           {
             event: "oauth2_token_issued",
-            scope_count: grantedScopes.length,
           },
           "OAuth2 access token issued"
         );
