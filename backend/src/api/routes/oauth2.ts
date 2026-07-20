@@ -20,7 +20,7 @@ export async function oauth2Routes(server: FastifyInstance) {
       config: {
         rateLimit: {
           max: 10,
-          timeWindow: '1 minute',
+          timeWindow: "1 minute",
         },
       },
       schema: {
@@ -50,7 +50,8 @@ export async function oauth2Routes(server: FastifyInstance) {
             },
             scope: {
               type: "string",
-              description: "Space-separated list of requested scopes (optional)",
+              description:
+                "Space-separated list of requested scopes (optional)",
               maxLength: 500,
             },
           },
@@ -88,7 +89,8 @@ export async function oauth2Routes(server: FastifyInstance) {
       if (grant_type !== "client_credentials") {
         return reply.code(400).send({
           error: "unsupported_grant_type",
-          error_description: "Only 'client_credentials' grant type is supported",
+          error_description:
+            "Only 'client_credentials' grant type is supported",
         });
       }
 
@@ -99,14 +101,16 @@ export async function oauth2Routes(server: FastifyInstance) {
         });
       }
 
-      if (!/^bw_[a-f0-9]{32}$/.test(client_id)) {
+      const clientIdPattern = /^bw_[a-f0-9]{32}$/u;
+      if (!clientIdPattern.test(client_id)) {
         return reply.code(400).send({
           error: "invalid_request",
           error_description: "Invalid client_id format",
         });
       }
 
-      if (!/^bws_[a-f0-9]{64}$/.test(client_secret)) {
+      const clientSecretPattern = /^bws_[a-f0-9]{64}$/u;
+      if (!clientSecretPattern.test(client_secret)) {
         return reply.code(400).send({
           error: "invalid_request",
           error_description: "Invalid client_secret format",
@@ -114,14 +118,15 @@ export async function oauth2Routes(server: FastifyInstance) {
       }
 
       try {
-        const apiKey = await apiKeyService.validateOAuth2ClientCredentials(
-          client_id,
-          client_secret
-        );
+        const apiKey =
+          await apiKeyService.validateOAuth2ClientCredentials(
+            client_id,
+            client_secret
+          );
 
         if (!apiKey) {
           logger.warn(
-            { client_id: client_id.substring(0, 10) + "..." },
+            { event: "oauth2_auth_failed" },
             "OAuth2 token request failed: invalid client credentials"
           );
           return reply.code(401).send({
@@ -130,21 +135,27 @@ export async function oauth2Routes(server: FastifyInstance) {
           });
         }
 
-        const requestedScopes = scope 
-          ? scope.trim().split(/\s+/).filter(Boolean).slice(0, 20)
+        const requestedScopes = scope
+          ? scope
+              .trim()
+              .split(/\s+/u)
+              .filter(Boolean)
+              .slice(0, 20)
           : [];
-        
+
         const grantedScopes =
           requestedScopes.length > 0
-            ? apiKey.scopes.filter((s) =>
-                requestedScopes.includes(s) || apiKey.scopes.includes("*")
+            ? apiKey.scopes.filter(
+                (s) =>
+                  requestedScopes.includes(s) || apiKey.scopes.includes("*")
               )
             : apiKey.scopes;
 
         if (requestedScopes.length > 0 && grantedScopes.length === 0) {
           return reply.code(400).send({
             error: "invalid_scope",
-            error_description: "Requested scopes are not authorized for this client",
+            error_description:
+              "Requested scopes are not authorized for this client",
           });
         }
 
@@ -155,10 +166,10 @@ export async function oauth2Routes(server: FastifyInstance) {
         );
 
         logger.info(
-          { 
-            client_id: client_id.substring(0, 10) + "...",
-            api_key_id: apiKey.id, 
-            scopes: grantedScopes 
+          {
+            event: "oauth2_token_issued",
+            api_key_id: apiKey.id,
+            scope_count: grantedScopes.length,
           },
           "OAuth2 access token issued"
         );
@@ -171,10 +182,10 @@ export async function oauth2Routes(server: FastifyInstance) {
         });
       } catch (error) {
         logger.error(
-          { 
+          {
             error: error instanceof Error ? error.message : String(error),
-            client_id: client_id.substring(0, 10) + "..." 
-          }, 
+            event: "oauth2_token_error",
+          },
           "OAuth2 token issuance failed"
         );
         return reply.code(500).send({
