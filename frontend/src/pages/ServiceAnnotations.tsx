@@ -232,7 +232,7 @@ export default function ServiceAnnotations() {
     );
   }
 
-  function handleEditStart(ann: (typeof annotations)[number]) {
+  function handleEditStart(ann: NonNullable<typeof annotations>[number]) {
     setEditingId(ann.id);
     setEditData({
       serviceName: ann.serviceName,

@@ -55,6 +55,19 @@ const envSchema = z.object({
   BASE_RPC_URL: z.string().url().optional(),
   BASE_RPC_FALLBACK_URL: z.string().url().optional(),
 
+  // Wormhole multi-chain bridge watcher — lock contract + watched token address
+  // per EVM chain. Verify against https://docs.wormhole.com/wormhole/reference/contracts
+  // before setting; an incorrect address silently monitors the wrong contract.
+  WORMHOLE_TOKEN_BRIDGE_ETHEREUM_ADDRESS: z.string().optional(),
+  WORMHOLE_TOKEN_BRIDGE_POLYGON_ADDRESS: z.string().optional(),
+  WORMHOLE_TOKEN_BRIDGE_BASE_ADDRESS: z.string().optional(),
+  WORMHOLE_WATCHED_TOKEN_ETHEREUM_ADDRESS: z.string().optional(),
+  WORMHOLE_WATCHED_TOKEN_POLYGON_ADDRESS: z.string().optional(),
+  WORMHOLE_WATCHED_TOKEN_BASE_ADDRESS: z.string().optional(),
+  // Stellar-side wrapped asset code/issuer this watcher reconciles the EVM lock total against.
+  WORMHOLE_WATCHED_ASSET_SYMBOL: z.string().default("wETH"),
+  WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER: z.string().optional(),
+
   // External APIs
   CIRCLE_API_KEY: z.string().optional(),
   // Circle API base URL — use sandbox for non-production environments

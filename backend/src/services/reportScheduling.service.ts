@@ -430,6 +430,7 @@ export class ReportSchedulingService {
     try {
       const drifts = (await this.reconciliationService.getDriftSummaries()).slice(0, 10);
       const rows = drifts
+        .slice(0, 10)
         .map(
           (d) =>
             `<tr><td>${d.assetCode}</td><td>${d.bridgeName}</td><td>${d.severity}</td><td>${d.latestRun.mismatchPercentage != null ? (d.latestRun.mismatchPercentage * 100).toFixed(3) + "%" : "—"}</td></tr>`

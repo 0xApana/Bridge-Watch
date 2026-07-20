@@ -22,6 +22,11 @@ on:
         required: false
         default: true
         type: boolean
+      report_only:
+        description: Report gate status without blocking the caller
+        required: false
+        default: false
+        type: boolean
       override:
         description: Allow an authorized maintainer to bypass failed gates
         required: false
@@ -272,6 +277,11 @@ jobs:
 
           if [ "$failed" -eq 0 ]; then
             echo "Decision: **PROMOTION APPROVED**" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$REPORT_ONLY" = "true" ]; then
+            echo "Decision: **PROMOTION WOULD BE BLOCKED (REPORT ONLY)**" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
