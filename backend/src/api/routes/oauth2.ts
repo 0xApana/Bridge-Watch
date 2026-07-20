@@ -17,6 +17,12 @@ export async function oauth2Routes(server: FastifyInstance) {
   server.post<{ Body: TokenRequestBody }>(
     "/token",
     {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: '1 minute',
+        },
+      },
       schema: {
         description: "OAuth2 Client Credentials Flow - Issue access token",
         tags: ["OAuth2"],
@@ -28,18 +34,24 @@ export async function oauth2Routes(server: FastifyInstance) {
               type: "string",
               enum: ["client_credentials"],
               description: "Must be 'client_credentials'",
+              maxLength: 50,
             },
             client_id: {
               type: "string",
               description: "OAuth2 client identifier",
+              pattern: "^bw_[a-f0-9]{32}$",
+              maxLength: 100,
             },
             client_secret: {
               type: "string",
               description: "OAuth2 client secret",
+              pattern: "^bws_[a-f0-9]{64}$",
+              maxLength: 200,
             },
             scope: {
               type: "string",
               description: "Space-separated list of requested scopes (optional)",
+              maxLength: 500,
             },
           },
         },
@@ -87,6 +99,20 @@ export async function oauth2Routes(server: FastifyInstance) {
         });
       }
 
+      if (!/^bw_[a-f0-9]{32}$/.test(client_id)) {
+        return reply.code(400).send({
+          error: "invalid_request",
+          error_description: "Invalid client_id format",
+        });
+      }
+
+      if (!/^bws_[a-f0-9]{64}$/.test(client_secret)) {
+        return reply.code(400).send({
+          error: "invalid_request",
+          error_description: "Invalid client_secret format",
+        });
+      }
+
       try {
         const apiKey = await apiKeyService.validateOAuth2ClientCredentials(
           client_id,
@@ -95,7 +121,7 @@ export async function oauth2Routes(server: FastifyInstance) {
 
         if (!apiKey) {
           logger.warn(
-            { client_id },
+            { client_id: client_id.substring(0, 10) + "..." },
             "OAuth2 token request failed: invalid client credentials"
           );
           return reply.code(401).send({
@@ -104,7 +130,10 @@ export async function oauth2Routes(server: FastifyInstance) {
           });
         }
 
-        const requestedScopes = scope ? scope.split(" ").filter(Boolean) : [];
+        const requestedScopes = scope 
+          ? scope.trim().split(/\s+/).filter(Boolean).slice(0, 20)
+          : [];
+        
         const grantedScopes =
           requestedScopes.length > 0
             ? apiKey.scopes.filter((s) =>
@@ -126,7 +155,11 @@ export async function oauth2Routes(server: FastifyInstance) {
         );
 
         logger.info(
-          { client_id, api_key_id: apiKey.id, scopes: grantedScopes },
+          { 
+            client_id: client_id.substring(0, 10) + "...",
+            api_key_id: apiKey.id, 
+            scopes: grantedScopes 
+          },
           "OAuth2 access token issued"
         );
 
@@ -137,7 +170,13 @@ export async function oauth2Routes(server: FastifyInstance) {
           scope: grantedScopes.join(" "),
         });
       } catch (error) {
-        logger.error({ error, client_id }, "OAuth2 token issuance failed");
+        logger.error(
+          { 
+            error: error instanceof Error ? error.message : String(error),
+            client_id: client_id.substring(0, 10) + "..." 
+          }, 
+          "OAuth2 token issuance failed"
+        );
         return reply.code(500).send({
           error: "server_error",
           error_description: "Failed to issue access token",
