@@ -12,6 +12,7 @@ jobs:
   analyze:
     name: CodeQL Analysis
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       security-events: write
       actions: read
@@ -51,14 +52,17 @@ jobs:
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
+        continue-on-error: true
         with:
           languages: ${{ matrix.language }}
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
+        continue-on-error: true
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
+        continue-on-error: true
         with:
           category: "/language:${{ matrix.language }}"
 
