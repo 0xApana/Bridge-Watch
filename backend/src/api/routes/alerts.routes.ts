@@ -37,6 +37,11 @@ const alertRuleResponse = {
 };
 
 export async function alertsRoutes(server: FastifyInstance) {
+  await server.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
+  });
+
   const alertService = new AlertService();
 
   server.addHook("preHandler", authMiddleware());
