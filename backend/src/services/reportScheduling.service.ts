@@ -428,8 +428,8 @@ export class ReportSchedulingService {
 
   private async buildReconciliationSection(): Promise<string> {
     try {
-      const drifts = (await this.reconciliationService.getDriftSummaries()).slice(0, 10);
-      const rows = drifts
+      const drifts = await this.reconciliationService.getDriftSummaries({});
+      const rows = drifts.summaries
         .slice(0, 10)
         .map(
           (d) =>

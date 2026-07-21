@@ -364,6 +364,8 @@ export interface ApiKeyRecord {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  clientId?: string | null;
+  oauthEnabled?: boolean;
 }
 
 export interface CreateApiKeyRequest {
@@ -371,11 +373,14 @@ export interface CreateApiKeyRequest {
   scopes: string[];
   rateLimitPerMinute?: number;
   expiresInDays?: number;
+  enableOAuth?: boolean;
 }
 
 export interface CreateApiKeyResponse {
   apiKey: string;
   key: ApiKeyRecord;
+  clientId?: string;
+  clientSecret?: string;
 }
 
 /** Service dependency graph (`/metadata/dependencies`) */

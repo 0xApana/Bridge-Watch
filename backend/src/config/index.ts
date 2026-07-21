@@ -87,6 +87,12 @@ const envSchema = z.object({
   COINBASE_API_SECRET: z.string().optional(),
   API_KEY_BOOTSTRAP_TOKEN: z.string().optional(),
 
+  // JWT / OAuth2 Configuration
+  JWT_SECRET: z.string().optional(),
+  JWT_ISSUER: z.string().default("bridge-watch-api"),
+  JWT_AUDIENCE: z.string().default("bridge-watch-api"),
+  JWT_TTL_SECONDS: z.coerce.number().default(3600),
+
   // Logging
   LOG_LEVEL: z
     .enum(["fatal", "error", "warn", "info", "debug", "trace"])

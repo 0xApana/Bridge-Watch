@@ -29,22 +29,22 @@ function buildDeterioratingAlert(score: HealthScore): RouteableAlert {
     sourceType: "health_score_drop",
     severity: score.overallScore < 0.3 ? "critical" : "high",
     triggeredValue: score.overallScore,
-    threshold: HEALTH_SCORE_THRESHOLD ?? 0.5,
+    threshold: 0.5,
     metric: "overall_health_score",
   };
 }
 
 async function routeDeterioratingAlerts(scores: HealthScore[]): Promise<void> {
   const deteriorating = scores.filter((s) => s.trend === "deteriorating");
+  const now = new Date();
   for (const score of deteriorating) {
-    const now = new Date();
     const dedupEvent: Omit<AlertEvent, "eventId"> = {
       ruleId: `health-check-${score.symbol}`,
       assetCode: score.symbol,
-      alertType: "health_score_change",
+      alertType: "health_score_drop",
       priority: score.overallScore < 0.3 ? "critical" : "high",
       triggeredValue: score.overallScore,
-      threshold: HEALTH_SCORE_THRESHOLD ?? 0.5,
+      threshold: 0.5,
       metric: "overall_health_score",
       webhookDelivered: false,
       onChainEventId: null,

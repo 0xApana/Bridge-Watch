@@ -102,9 +102,11 @@ export async function buildServer() {
   // Sliding-window Redis rate limiting (replaces the simple @fastify/rate-limit global)
   await registerRateLimiting(server as any);
 
-  // Register official rate-limit plugin to satisfy CodeQL and handle per-route config
+  // Register official rate-limit plugin to satisfy CodeQL static analysis and enforce global rate protection
   await server.register(rateLimit, {
-    global: false,
+    global: true,
+    max: config.NODE_ENV === "test" ? 10000 : 100,
+    timeWindow: "1 minute",
     addHeaders: {
       "x-ratelimit-limit": false,
       "x-ratelimit-remaining": false,
