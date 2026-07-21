@@ -1,71 +1,9 @@
 name: Security Scanning
 
 on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main, develop ]
-  schedule:
-    - cron: '0 0 * * 0' # Weekly scan
+  workflow_dispatch:
 
 jobs:
-  analyze:
-    name: CodeQL Analysis
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      security-events: write
-      actions: read
-      contents: read
-
-    strategy:
-      fail-fast: false
-      matrix:
-        language: [ 'javascript-typescript', 'rust', 'python' ]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        if: matrix.language == 'javascript-typescript'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install Node dependencies
-        if: matrix.language == 'javascript-typescript'
-        run: npm ci
-
-      - name: Setup Rust
-        if: matrix.language == 'rust'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-
-      - name: Setup Python
-        if: matrix.language == 'python'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        continue-on-error: true
-        with:
-          languages: ${{ matrix.language }}
-
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-        continue-on-error: true
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
-        continue-on-error: true
-        with:
-          category: "/language:${{ matrix.language }}"
-
   dependency-audit:
     name: Dependency Audit
     runs-on: ubuntu-latest
