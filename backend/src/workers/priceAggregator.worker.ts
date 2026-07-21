@@ -35,6 +35,7 @@ function buildDeviationAlert(symbol: string, deviation: { deviated: boolean; per
 }
 
 async function routeDeviationAlert(symbol: string, deviation: { deviated: boolean; percentage: number }): Promise<void> {
+  const now = new Date();
   const dedupEvent: Omit<AlertEvent, "eventId"> = {
     ruleId: `price-aggregator-${symbol}`,
     assetCode: symbol,
@@ -45,6 +46,16 @@ async function routeDeviationAlert(symbol: string, deviation: { deviated: boolea
     metric: "price_deviation_pct",
     webhookDelivered: false,
     onChainEventId: null,
+    lifecycleState: "open",
+    acknowledgedAt: null,
+    acknowledgedBy: null,
+    assignedAt: null,
+    assignedTo: null,
+    closedAt: null,
+    closedBy: null,
+    closureNote: null,
+    updatedAt: now,
+    time: now,
   };
 
   const dedupResult = duplicateAlertCheckService.check(dedupEvent);
