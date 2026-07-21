@@ -209,7 +209,7 @@ export default function ServiceAnnotations() {
   } | null>(null);
   const [author, setAuthor] = useState("operator");
 
-  const { data: annotations, isLoading, error, refetch } = useServiceAnnotations();
+  const { data: annotations = [], isLoading, error, refetch } = useServiceAnnotations();
   const createMutation = useCreateServiceAnnotation();
   const updateMutation = useUpdateServiceAnnotation();
   const deleteMutation = useDeleteServiceAnnotation();
@@ -232,7 +232,7 @@ export default function ServiceAnnotations() {
     );
   }
 
-  function handleEditStart(ann: (typeof annotations)[number]) {
+  function handleEditStart(ann: NonNullable<typeof annotations>[number]) {
     setEditingId(ann.id);
     setEditData({
       serviceName: ann.serviceName,

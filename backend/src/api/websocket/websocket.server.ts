@@ -158,6 +158,7 @@ export class WebSocketServer implements IBroadcaster {
       messageCount: 0,
       windowStart: Date.now(),
       ip,
+      pendingPing: false,
     };
 
     this.clients.set(clientId, state);
@@ -182,6 +183,7 @@ export class WebSocketServer implements IBroadcaster {
     // Update lastSeen on protocol-level pong (heartbeat response).
     socket.on("pong", () => {
       state.lastSeen = new Date();
+      state.pendingPing = false;
     });
 
     socket.on("close", () => this.removeClient(state));
@@ -373,9 +375,24 @@ export class WebSocketServer implements IBroadcaster {
 
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      const cutoffMs = Date.now() - (HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS);
+      const now = Date.now();
 
       for (const state of this.clients.values()) {
+        // A client that was pinged last sweep and never replied with a pong
+        // has silently disappeared – terminate immediately.
+        if (state.pendingPing) {
+          logger.warn(
+            { clientId: state.id },
+            "WebSocket client missed pong – terminating connection"
+          );
+          state.socket.terminate();
+          this.removeClient(state);
+          continue;
+        }
+
+        // If the client has not been seen for longer than the combined
+        // interval + timeout window, it is also considered dead.
+        const cutoffMs = now - (HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS);
         if (state.lastSeen.getTime() < cutoffMs) {
           logger.warn(
             { clientId: state.id },
@@ -383,7 +400,12 @@ export class WebSocketServer implements IBroadcaster {
           );
           state.socket.terminate();
           this.removeClient(state);
-        } else if (state.socket.readyState === WS_OPEN) {
+          continue;
+        }
+
+        // Send a ping; the pong handler will clear `pendingPing`.
+        if (state.socket.readyState === WS_OPEN) {
+          state.pendingPing = true;
           state.socket.ping();
         }
       }

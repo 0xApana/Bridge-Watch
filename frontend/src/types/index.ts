@@ -38,6 +38,18 @@ export interface Bridge {
   mismatchPercentage: number;
 }
 
+export interface EvmLockDetail {
+  chain: "ethereum" | "polygon" | "base";
+  contractAddress: string;
+  tokenAddress: string;
+  assetSymbol: string;
+  lockedAmount: string;
+  isPaused: boolean;
+  blockNumber: number;
+  timestamp: number;
+  error: string | null;
+}
+
 export interface BridgeStats {
   name: string;
   volume24h: number;
@@ -46,6 +58,8 @@ export interface BridgeStats {
   totalTransactions: number;
   averageTransferTime: number;
   uptime30d: number;
+  /** Per-chain EVM lock contract balances, present for multi-chain (e.g. Wormhole) bridges. */
+  evmLockDetails?: EvmLockDetail[];
 }
 
 export type ReconciliationTriageStatus =

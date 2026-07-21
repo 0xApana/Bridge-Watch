@@ -6,6 +6,7 @@ import { useRefreshControls } from "../hooks/useRefreshControls";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import BridgeStatusCard from "../components/BridgeStatusCard";
 import BridgeNotesPanel from "../components/BridgeNotesPanel";
+import EvmLockDetailsPanel from "../components/EvmLockDetailsPanel";
 import FavoriteTagChip from "../components/favorites/FavoriteTagChip";
 import RefreshControls from "../components/RefreshControls";
 import PullToRefresh from "../components/PullToRefresh";
@@ -190,9 +191,12 @@ export default function Bridges() {
           </table>
         </div>
       </div>
-      {/* Bridge notes panel — shown when a bridge card is clicked */}
+      {/* EVM lock details + notes panels — shown when a bridge card is clicked */}
       {selectedBridge && (
-        <BridgeNotesPanel bridgeName={selectedBridge} />
+        <>
+          <EvmLockDetailsPanel bridgeName={selectedBridge} />
+          <BridgeNotesPanel bridgeName={selectedBridge} />
+        </>
       )}
     </div>
   );

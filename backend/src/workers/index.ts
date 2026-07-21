@@ -1,4 +1,5 @@
 import { Job } from "bullmq";
+import { config } from "../config/index.js";
 import { JobQueue } from "./queue.js";
 import { processPriceCollection } from "./priceCollection.job.js";
 import { processHealthCalculation } from "./healthCalculation.job.js";
@@ -148,7 +149,11 @@ export async function initJobSystem() {
   await jobQueue.addRepeatableJob("anomaly-detection", {}, "*/1 * * * *");
   // reconciliation: per-asset, every hour (top of hour)
   // Note: This uses the queue helper for retry/backoff defaults.
-  for (const assetCode of ["USDC", "EURC"]) {
+  const reconciledAssetCodes = ["USDC", "EURC"];
+  if (config.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER) {
+    reconciledAssetCodes.push(config.WORMHOLE_WATCHED_ASSET_SYMBOL);
+  }
+  for (const assetCode of reconciledAssetCodes) {
     await jobQueue.addJob("reconciliation", { assetCode }, {
       repeat: { pattern: "0 * * * *" },
       jobId: `reconciliation:${assetCode}`,
