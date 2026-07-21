@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import rateLimit from "@fastify/rate-limit";
 import { AlertService, type AlertCondition } from "../../services/alert.service.js";
 import { authMiddleware } from "../middleware/auth.js";
 import {
