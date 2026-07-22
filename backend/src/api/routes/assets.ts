@@ -4,6 +4,10 @@ import { LiquidityService } from "../../services/liquidity.service.js";
 import { PriceService } from "../../services/price.service.js";
 import { assetTagService } from "../../services/assetTag.service.js";
 import { authMiddleware } from "../middleware/auth.js";
+import {
+  AssetDetailsResponseSchema,
+  toOpenApiSchema,
+} from "../schemas/openapiSchemas.js";
 
 function getAuditActorType(source: "api-key" | "bootstrap" | undefined): "user" | "api_key" | "system" {
   if (source === "api-key") return "api_key";
@@ -53,13 +57,7 @@ export async function assetsRoutes(server: FastifyInstance) {
           required: ["symbol"],
         },
         response: {
-          200: {
-            type: "object",
-            properties: {
-              symbol: { type: "string" },
-              details: { nullable: true, type: "object", additionalProperties: true },
-            },
-          },
+          200: toOpenApiSchema(AssetDetailsResponseSchema),
           404: { $ref: "Error#" },
         },
       },
