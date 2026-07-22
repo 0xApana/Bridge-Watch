@@ -347,20 +347,34 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
         </div>
 
         {/* Footer hint */}
-        <div className="px-4 py-2 border-t border-stellar-border flex items-center gap-4 text-xs text-stellar-text-secondary">
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↑</kbd>
-            <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↓</kbd>
-            navigate
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↵</kbd>
-            select
-          </span>
-          <span className="flex items-center gap-1">
-            <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">ESC</kbd>
-            close
-          </span>
+        <div className="px-4 py-2 border-t border-stellar-border flex items-center justify-between gap-4 text-xs text-stellar-text-secondary">
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↑</kbd>
+              <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↓</kbd>
+              navigate
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">↵</kbd>
+              select
+            </span>
+            <span className="flex items-center gap-1">
+              <kbd className="px-1.5 py-0.5 rounded bg-stellar-border font-mono">ESC</kbd>
+              close
+            </span>
+          </div>
+          {debouncedQuery.length >= 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                navigate(`/search?q=${encodeURIComponent(debouncedQuery)}`);
+              }}
+              className="text-stellar-blue hover:text-stellar-blue/80 transition-colors font-medium"
+            >
+              View all results →
+            </button>
+          )}
         </div>
       </div>
     </div>

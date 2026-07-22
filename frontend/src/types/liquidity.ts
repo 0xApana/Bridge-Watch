@@ -69,4 +69,8 @@ export interface LiquidityState {
   isLoading: boolean;
   error: string | null;
   lastUpdated: string | null;
+  data?: {
+    sources: unknown[];
+  } | null;
+  refetch: () => Promise<unknown>;
 }

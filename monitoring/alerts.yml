@@ -91,3 +91,15 @@ groups:
           summary: "Bridge health score low"
           description: "{{ $labels.bridge_name }} health score dropped below 80."
           runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#bridgehealthlow"
+
+      - alert: BullQueueFailedGrowingRapidly
+        expr: rate(bull_queue_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: backend
+          team: platform
+        annotations:
+          summary: "BullMQ failed jobs growing rapidly"
+          description: "The rate of failed jobs in queue {{ $labels.queue_name }} is increasing rapidly."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#bullqueuefailedgrowingrapidly"

@@ -1,15 +1,21 @@
 import { Suspense, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useBridges } from "../hooks/useBridges";
 import { useFavorites } from "../hooks/useFavorites";
 import { useRefreshControls } from "../hooks/useRefreshControls";
 import { usePullToRefresh } from "../hooks/usePullToRefresh";
 import BridgeStatusCard from "../components/BridgeStatusCard";
+import BridgeNotesPanel from "../components/BridgeNotesPanel";
+import EvmLockDetailsPanel from "../components/EvmLockDetailsPanel";
 import FavoriteTagChip from "../components/favorites/FavoriteTagChip";
 import RefreshControls from "../components/RefreshControls";
 import PullToRefresh from "../components/PullToRefresh";
 import { SkeletonCard, ErrorBoundary } from "../components/Skeleton";
 
 export default function Bridges() {
+  const [searchParams] = useSearchParams();
+  const selectedBridge = searchParams.get("selected") ?? null;
+
   const {
     favoritesFilterMode,
     setFavoritesFilterMode,
@@ -126,7 +132,7 @@ export default function Bridges() {
                 <SkeletonCard key={i} rows={6} ariaLabel={`Loading bridge card ${i}`} />
               ))}
             </div>
-          ) : data && data.bridges.length > 0 ? (
+          ) : data && data.bridges && data.bridges.length > 0 ? (
             filteredBridges.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredBridges.map((bridge) => (
@@ -185,6 +191,13 @@ export default function Bridges() {
           </table>
         </div>
       </div>
+      {/* EVM lock details + notes panels — shown when a bridge card is clicked */}
+      {selectedBridge && (
+        <>
+          <EvmLockDetailsPanel bridgeName={selectedBridge} />
+          <BridgeNotesPanel bridgeName={selectedBridge} />
+        </>
+      )}
     </div>
   );
 }

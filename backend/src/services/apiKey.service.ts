@@ -17,6 +17,8 @@ export interface ApiKeyRecord {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  clientId?: string | null;
+  oauthEnabled?: boolean;
 }
 
 export interface ApiKeyAuditRecord {
@@ -31,6 +33,7 @@ export interface ApiKeyAuditRecord {
 interface StoredApiKeyRecord extends ApiKeyRecord {
   salt: string;
   hash: string;
+  clientSecretHash?: string | null;
 }
 
 interface CreateApiKeyInput {
@@ -39,6 +42,7 @@ interface CreateApiKeyInput {
   rateLimitPerMinute?: number;
   expiresAt?: string | null;
   createdBy: string;
+  enableOAuth?: boolean;
 }
 
 interface ApiKeyValidationResult {
@@ -54,6 +58,7 @@ interface ApiKeyRepository {
   update(record: StoredApiKeyRecord): Promise<void>;
   getById(id: string): Promise<StoredApiKeyRecord | null>;
   getByPrefix(prefix: string): Promise<StoredApiKeyRecord[]>;
+  getByClientId(clientId: string): Promise<StoredApiKeyRecord | null>;
   list(): Promise<ApiKeyRecord[]>;
   addAudit(entry: ApiKeyAuditRecord): Promise<void>;
 }
@@ -138,6 +143,14 @@ class MemoryApiKeyRepository implements ApiKeyRepository {
     );
   }
 
+  async getByClientId(clientId: string): Promise<StoredApiKeyRecord | null> {
+    return (
+      Array.from(MemoryApiKeyRepository.records.values()).find(
+        (record) => record.clientId === clientId
+      ) ?? null
+    );
+  }
+
   async list(): Promise<ApiKeyRecord[]> {
     return Array.from(MemoryApiKeyRepository.records.values())
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
@@ -167,6 +180,9 @@ class DatabaseApiKeyRepository implements ApiKeyRepository {
       created_by: record.createdBy,
       created_at: record.createdAt,
       updated_at: record.updatedAt,
+      client_id: record.clientId ?? null,
+      client_secret_hash: record.clientSecretHash ?? null,
+      oauth_enabled: record.oauthEnabled ?? false,
     });
   }
 
@@ -187,6 +203,9 @@ class DatabaseApiKeyRepository implements ApiKeyRepository {
         last_used_ip: record.lastUsedIp,
         created_by: record.createdBy,
         updated_at: record.updatedAt,
+        client_id: record.clientId ?? null,
+        client_secret_hash: record.clientSecretHash ?? null,
+        oauth_enabled: record.oauthEnabled ?? false,
       });
   }
 
@@ -198,6 +217,13 @@ class DatabaseApiKeyRepository implements ApiKeyRepository {
   async getByPrefix(prefix: string): Promise<StoredApiKeyRecord[]> {
     const rows = await getDatabase()("api_keys").where({ key_prefix: prefix });
     return rows.map((row) => this.toStoredRecord(row));
+  }
+
+  async getByClientId(clientId: string): Promise<StoredApiKeyRecord | null> {
+    const row = await getDatabase()("api_keys")
+      .where({ client_id: clientId })
+      .first();
+    return row ? this.toStoredRecord(row) : null;
   }
 
   async list(): Promise<ApiKeyRecord[]> {
@@ -240,12 +266,15 @@ class DatabaseApiKeyRepository implements ApiKeyRepository {
       createdBy: String(row.created_by),
       createdAt: String(row.created_at),
       updatedAt: String(row.updated_at),
+      clientId: row.client_id ? String(row.client_id) : null,
+      oauthEnabled: Boolean(row.oauth_enabled),
+      clientSecretHash: row.client_secret_hash ? String(row.client_secret_hash) : null,
     };
   }
 
   private toPublicRecord(record: StoredApiKeyRecord): ApiKeyRecord {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { salt, hash, ...publicRecord } = record;
+    const { salt, hash, clientSecretHash, ...publicRecord } = record;
     return publicRecord as unknown as ApiKeyRecord;
   }
 }
@@ -265,10 +294,26 @@ export class ApiKeyService {
   async createKey(input: CreateApiKeyInput): Promise<{
     apiKey: string;
     key: ApiKeyRecord;
+    clientId?: string;
+    clientSecret?: string;
   }> {
     const issuedAt = nowIso();
     const { plaintext, prefix } = createPlaintextKey();
     const salt = makeSalt();
+    
+    let clientId: string | undefined;
+    let clientSecret: string | undefined;
+    let clientSecretHash: string | undefined;
+
+    if (input.enableOAuth) {
+      const oauth2Service = await import("./oauth2.service.js");
+      const service = new oauth2Service.OAuth2Service();
+      const credentials = service.generateClientCredentials();
+      clientId = credentials.clientId;
+      clientSecret = credentials.clientSecret;
+      clientSecretHash = service.hashClientSecret(clientSecret);
+    }
+
     const record: StoredApiKeyRecord = {
       id: makeId(),
       name: input.name.trim(),
@@ -285,6 +330,9 @@ export class ApiKeyService {
       createdBy: input.createdBy,
       createdAt: issuedAt,
       updatedAt: issuedAt,
+      clientId: clientId ?? null,
+      oauthEnabled: input.enableOAuth ?? false,
+      clientSecretHash: clientSecretHash ?? null,
     };
 
     await this.repository.create(record);
@@ -293,6 +341,8 @@ export class ApiKeyService {
     return {
       apiKey: plaintext,
       key: this.toPublicRecord(record),
+      ...(clientId && { clientId }),
+      ...(clientSecret && { clientSecret }),
     };
   }
 
@@ -346,6 +396,34 @@ export class ApiKeyService {
     await this.repository.update(record);
     await this.log(id, "extended", actor, `${extraDays} days`);
     return this.toPublicRecord(record);
+  }
+
+  async validateOAuth2ClientCredentials(
+    clientId: string,
+    clientSecret: string
+  ): Promise<StoredApiKeyRecord | null> {
+    const record = await this.repository.getByClientId(clientId);
+    
+    if (!record) {
+      return null;
+    }
+
+    if (record.revokedAt || isExpired(record.expiresAt)) {
+      return null;
+    }
+
+    if (!record.oauthEnabled || !record.clientSecretHash) {
+      return null;
+    }
+
+    const oauth2Service = await import("./oauth2.service.js");
+    const service = new oauth2Service.OAuth2Service();
+    
+    if (!service.verifyClientSecret(clientSecret, record.clientSecretHash)) {
+      return null;
+    }
+
+    return record;
   }
 
   async validateKey(

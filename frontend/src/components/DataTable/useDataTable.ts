@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type {
   ColumnDef,
   ColumnFiltersState,
@@ -9,6 +9,7 @@ import type {
 } from "@tanstack/react-table";
 import type { DataTableColumnDef, DataTableState } from "./types";
 import { useTableSorting } from "./useTableSorting";
+import { useLocalStorageState } from "../../hooks/useLocalStorageState";
 
 type UseDataTableOptions<TData> = {
   columns: Array<DataTableColumnDef<TData>>;
@@ -49,8 +50,6 @@ export function useDataTable<TData>({
     pageIndex: defaultPageIndex,
     pageSize: defaultPageSize,
   });
-  const [columnVisibility, setColumnVisibility] =
-    useState<VisibilityState>(defaultVisibility);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   const defaultColumnOrder = useMemo(() => {
@@ -61,7 +60,20 @@ export function useDataTable<TData>({
     return ids;
   }, [columns]);
 
-  const [columnOrder, setColumnOrder] = useState<string[]>(defaultColumnOrder);
+  const [columnVisibility, setColumnVisibility] = useLocalStorageState<VisibilityState>(
+    storageKey ? `${storageKey}:col-visibility` : "temporary-col-visibility",
+    defaultVisibility,
+  );
+
+  const [columnOrder, setColumnOrder] = useLocalStorageState<string[]>(
+    storageKey ? `${storageKey}:col-order` : "temporary-col-order",
+    defaultColumnOrder,
+  );
+
+  const resetColumnPreferences = useCallback(() => {
+    setColumnVisibility(defaultVisibility);
+    setColumnOrder(defaultColumnOrder);
+  }, [defaultVisibility, defaultColumnOrder, setColumnVisibility, setColumnOrder]);
 
   const state: DataTableState = {
     sorting,
@@ -84,6 +96,7 @@ export function useDataTable<TData>({
     setColumnVisibility,
     setRowSelection,
     setColumnOrder,
+    resetColumnPreferences,
   };
 }
 

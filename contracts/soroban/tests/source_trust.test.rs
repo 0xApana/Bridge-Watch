@@ -5,7 +5,13 @@ use soroban_sdk::{testutils::Address as _, Address, Env, String};
 // Import the contract and client
 use bridge_watch_soroban::{BridgeWatchContract, BridgeWatchContractClient};
 
-fn setup() -> (Env, BridgeWatchContractClient<'static>, Address, Address, Address) {
+fn setup() -> (
+    Env,
+    BridgeWatchContractClient<'static>,
+    Address,
+    Address,
+    Address,
+) {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -251,7 +257,6 @@ fn test_multiple_registrations_updates_source() {
     assert_eq!(all_sources.len(), 1);
 }
 
-
 // ── Integration Tests with Submission Gating ─────────────────────────────────
 
 #[test]
@@ -262,12 +267,34 @@ fn test_submit_health_requires_trusted_source_when_sources_registered() {
     client.register_asset(&admin, &String::from_str(&env, "USDC"));
 
     // Grant submission role to both sources
-    client.grant_role(&admin, &trusted_source, bridge_watch_soroban::AdminRole::HealthSubmitter);
-    client.grant_role(&admin, &untrusted_source, bridge_watch_soroban::AdminRole::HealthSubmitter);
+    client.grant_role(
+        &admin,
+        &trusted_source,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
+    client.grant_role(
+        &admin,
+        &untrusted_source,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
 
     // Before registering any trusted sources, both should be able to submit
-    client.submit_health(&trusted_source, &String::from_str(&env, "USDC"), 95, 90, 92, 88);
-    client.submit_health(&untrusted_source, &String::from_str(&env, "USDC"), 94, 89, 91, 87);
+    client.submit_health(
+        &trusted_source,
+        &String::from_str(&env, "USDC"),
+        95,
+        90,
+        92,
+        88,
+    );
+    client.submit_health(
+        &untrusted_source,
+        &String::from_str(&env, "USDC"),
+        94,
+        89,
+        91,
+        87,
+    );
 
     // Now register the trusted source
     client.register_trusted_source(
@@ -277,7 +304,14 @@ fn test_submit_health_requires_trusted_source_when_sources_registered() {
     );
 
     // Trusted source should still work
-    client.submit_health(&trusted_source, &String::from_str(&env, "USDC"), 96, 91, 93, 89);
+    client.submit_health(
+        &trusted_source,
+        &String::from_str(&env, "USDC"),
+        96,
+        91,
+        93,
+        89,
+    );
 
     // Untrusted source should now fail (would panic with "caller is not a trusted source")
     // Note: In actual test, this would panic. Documenting expected behavior.
@@ -291,8 +325,16 @@ fn test_submit_price_requires_trusted_source_when_sources_registered() {
     client.register_asset(&admin, &String::from_str(&env, "USDC"));
 
     // Grant submission role to both sources
-    client.grant_role(&admin, &trusted_source, bridge_watch_soroban::AdminRole::PriceSubmitter);
-    client.grant_role(&admin, &untrusted_source, bridge_watch_soroban::AdminRole::PriceSubmitter);
+    client.grant_role(
+        &admin,
+        &trusted_source,
+        bridge_watch_soroban::AdminRole::PriceSubmitter,
+    );
+    client.grant_role(
+        &admin,
+        &untrusted_source,
+        bridge_watch_soroban::AdminRole::PriceSubmitter,
+    );
 
     // Before registering any trusted sources, both should be able to submit
     client.submit_price(
@@ -336,7 +378,11 @@ fn test_revoked_source_cannot_submit() {
 
     // Register and grant role to source
     client.register_trusted_source(&admin, &source, &String::from_str(&env, "Oracle"));
-    client.grant_role(&admin, &source, bridge_watch_soroban::AdminRole::HealthSubmitter);
+    client.grant_role(
+        &admin,
+        &source,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
 
     // Should be able to submit
     client.submit_health(&source, &String::from_str(&env, "USDC"), 95, 90, 92, 88);
@@ -357,7 +403,11 @@ fn test_reactivated_source_can_submit_again() {
 
     // Register and grant role to source
     client.register_trusted_source(&admin, &source, &String::from_str(&env, "Oracle"));
-    client.grant_role(&admin, &source, bridge_watch_soroban::AdminRole::HealthSubmitter);
+    client.grant_role(
+        &admin,
+        &source,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
 
     // Submit successfully
     client.submit_health(&source, &String::from_str(&env, "USDC"), 95, 90, 92, 88);
@@ -384,8 +434,16 @@ fn test_multiple_trusted_sources_can_all_submit() {
     client.register_trusted_source(&admin, &source2, &String::from_str(&env, "Oracle 2"));
 
     // Grant roles
-    client.grant_role(&admin, &source1, bridge_watch_soroban::AdminRole::HealthSubmitter);
-    client.grant_role(&admin, &source2, bridge_watch_soroban::AdminRole::HealthSubmitter);
+    client.grant_role(
+        &admin,
+        &source1,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
+    client.grant_role(
+        &admin,
+        &source2,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
 
     // Both should be able to submit
     client.submit_health(&source1, &String::from_str(&env, "USDC"), 95, 90, 92, 88);
@@ -405,7 +463,11 @@ fn test_admin_can_always_submit_regardless_of_trust() {
 
     // Register a trusted source (activates trust enforcement)
     client.register_trusted_source(&admin, &source, &String::from_str(&env, "Oracle"));
-    client.grant_role(&admin, &source, bridge_watch_soroban::AdminRole::HealthSubmitter);
+    client.grant_role(
+        &admin,
+        &source,
+        bridge_watch_soroban::AdminRole::HealthSubmitter,
+    );
 
     // Admin should still be able to submit even without being a registered trusted source
     // (because admin has inherent permissions)

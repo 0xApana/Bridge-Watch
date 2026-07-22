@@ -61,6 +61,9 @@ Playwright projects currently run:
 - Keep realistic, minimal fixtures in `e2e/fixtures`.
 - Add/modify fixture files for new flows instead of hardcoding payloads in specs.
 - Use route-level mock handlers in `mockApi.ts` so multiple tests reuse the same setup.
+- See [FIXTURE_AUDIT_REPORT.md](./FIXTURE_AUDIT_REPORT.md) for the full fixture inventory, ownership, and update process.
+
+**Note:** `mockApi.ts` builds responses from `frontend/src/test/factories.ts` rather than loading `e2e/fixtures/*.json` directly. JSON fixtures are schema-validated in CI (`fixtures:validate`); keep factory defaults aligned when API shapes change.
 
 ## CI Integration
 

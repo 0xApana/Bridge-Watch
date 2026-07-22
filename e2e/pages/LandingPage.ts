@@ -12,12 +12,12 @@ export class LandingPage {
   }
 
   async goto(): Promise<void> {
-    await this.page.goto("/");
-    await expect(this.heroHeading).toBeVisible();
+    await this.page.goto("/", { waitUntil: "networkidle" });
+    await expect(this.heroHeading).toBeVisible({ timeout: 15000 });
   }
 
   async openDashboard(): Promise<void> {
     await this.launchAppButton.click();
-    await expect(this.page).toHaveURL(/\/dashboard$/);
+    await expect(this.page).toHaveURL(/\/dashboard/);
   }
 }

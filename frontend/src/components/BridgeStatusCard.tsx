@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { AssetStatusBadge } from "./AssetStatusBadge";
+import { bridgeStatusToAssetStatus } from "../utils/status";
 
 interface BridgeStatusCardProps {
   name: string;
@@ -12,22 +14,7 @@ interface BridgeStatusCardProps {
   topRight?: ReactNode;
 }
 
-function getStatusBadge(status: string) {
-  const styles: Record<string, string> = {
-    healthy: "bg-green-500/20 text-green-400",
-    degraded: "bg-yellow-500/20 text-yellow-400",
-    down: "bg-red-500/20 text-red-400",
-    unknown: "bg-gray-500/20 text-gray-400",
-  };
 
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${styles[status] || styles.unknown}`}
-    >
-      {status.charAt(0).toUpperCase() + status.slice(1)}
-    </span>
-  );
-}
 
 function formatNumber(num: number): string {
   if (num >= 1_000_000_000) return `$${(num / 1_000_000_000).toFixed(2)}B`;
@@ -61,7 +48,7 @@ export default function BridgeStatusCard({
         className={`mb-4 flex items-center justify-between gap-2 ${topRight ? "pr-14" : ""}`}
       >
         <h3 className="text-lg font-semibold text-stellar-text-primary truncate">{name}</h3>
-        {getStatusBadge(status)}
+        <AssetStatusBadge status={bridgeStatusToAssetStatus(status)} size="sm" />
       </div>
 
       <div className="space-y-3">

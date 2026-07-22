@@ -9,20 +9,35 @@ pub mod analytics_aggregator;
 #[cfg(test)]
 pub mod asset_registry;
 #[cfg(test)]
+pub mod asset_deprecation;
+#[cfg(test)]
+pub mod batch_query;
+#[cfg(test)]
 pub mod circuit_breaker;
+pub mod emergency_fund_recovery;
+pub mod emergency_multisig;
+pub mod escrow_contract;
 #[cfg(test)]
 pub mod governance;
 #[cfg(test)]
 pub mod insurance_pool;
 pub mod liquidity_pool;
+pub mod migration;
 #[cfg(test)]
 pub mod multisig_treasury;
+pub mod operator_rotation;
 #[cfg(test)]
 pub mod rate_limiter;
+pub mod report_hash;
 #[cfg(test)]
 pub mod reputation_system;
+#[cfg(test)]
+pub mod sidecar_state;
+pub mod source_blessing;
 pub mod source_trust;
-
+pub mod state_export;
+pub mod threshold_window;
+pub mod version_migration_helper;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env, String, Vec,
 };
@@ -36,7 +51,9 @@ use liquidity_pool::{
     PoolSnapshot, PoolType,
 };
 
+use emergency_multisig::{EmergencyAction, MultisigActionLog, MultisigConfig, OperatorSignature};
 // Storage key constants instead of using DataKey enum for storage operations
+#[allow(dead_code)]
 mod keys {
     pub const ADMIN: &str = "admin";
     pub const ASSET_HEALTH: &str = "asset_health";
@@ -112,6 +129,10 @@ mod keys {
     // Event Replay Helpers (issue #296)
     pub const EVENT_REPLAY_LOG: &str = "event_replay_log";
     pub const EVENT_REPLAY_CTR: &str = "event_replay_ctr";
+    // Emergency Multi-Signature Halt & Recovery (issue #794)
+    pub const EMERGENCY_MULTISIG_CONFIG: &str = "em_msig_cfg";
+    pub const EMERGENCY_MULTISIG_NONCE: &str = "em_msig_nonce";
+    pub const EMERGENCY_MULTISIG_LOG: &str = "em_msig_log";
 }
 
 #[contracttype]
@@ -764,6 +785,74 @@ pub struct SignerSignature {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum StatusTier {
+    Ok,
+    Low,
+    Medium,
+    High,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ContractStatusRollup {
+    pub tier: StatusTier,
+    pub asset_ok: u32,
+    pub asset_low: u32,
+    pub asset_medium: u32,
+    pub asset_high: u32,
+    pub bridge_ok: u32,
+    pub bridge_low: u32,
+    pub bridge_medium: u32,
+    pub bridge_high: u32,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetStatusRollup {
+    pub asset_code: String,
+    pub tier: StatusTier,
+    pub health_score: u32,
+    pub has_price_deviation_alert: bool,
+    pub price_deviation_tier: StatusTier,
+    pub paused: bool,
+    pub active: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BridgeStatusRollup {
+    pub bridge_id: String,
+    pub tier: StatusTier,
+    pub latest_mismatch_bps: i128,
+    pub is_critical: bool,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetLockState {
+    pub asset_code: String,
+    pub is_locked: bool,
+    pub reason: String,
+    pub locked_by: Address,
+    pub locked_at: u64,
+    pub unlocked_by: Option<Address>,
+    pub unlocked_at: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AssetLockRecord {
+    pub locked: bool,
+    pub reason: String,
+    pub caller: Address,
+    pub timestamp: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AssetDataKey {
     Health(String),
     Price(String),
@@ -779,6 +868,8 @@ pub enum AssetDataKey {
     LiqHist(String),
     ArchLiqHist(String),
     PauseReason(String),
+    Lock(String),
+    LockHist(String),
 }
 
 #[contracttype]
@@ -838,6 +929,9 @@ pub enum DataKey {
     CurrentWasmHash,
     RollbackTargetHash,
     ConfigKeys,
+    ContractStatusRollup,
+    AssetStatusRollup(String),
+    BridgeStatusRollup(String),
 }
 
 #[contracttype]
@@ -1199,16 +1293,18 @@ impl BridgeWatchContract {
         price_stability_score: u32,
         bridge_uptime_score: u32,
     ) {
-        Self::assert_not_globally_paused(&env);
         Self::check_permission(&env, &caller, AdminRole::HealthSubmitter);
-        
+
+        // Check if asset is locked
+        Self::assert_asset_not_locked(&env, &asset_code);
+
         // Check if caller is a trusted source (if any sources are registered)
         let active_sources = source_trust::get_active_trusted_sources(&env);
-        if active_sources.len() > 0 {
+        if !active_sources.is_empty() {
             // If sources are registered, enforce trust requirement
             source_trust::require_trusted_source(&env, &caller);
         }
-        
+
         let status = Self::load_asset_health(&env, &asset_code);
         Self::assert_asset_accepting_submissions(&status);
         let timestamp = env.ledger().timestamp();
@@ -1234,8 +1330,10 @@ impl BridgeWatchContract {
             .persistent()
             .set(&AssetDataKey::Health(asset_code.clone()), &record);
 
-        env.events()
-            .publish((symbol_short!("health_up"), asset_code.clone()), health_score);
+        env.events().publish(
+            (symbol_short!("health_up"), asset_code.clone()),
+            health_score,
+        );
         Self::append_replay_event(
             &env,
             String::from_str(&env, "health_up"),
@@ -1252,7 +1350,6 @@ impl BridgeWatchContract {
     /// `HealthSubmitter`. Accepts up to 20 records per call, all stamped with
     /// the same ledger timestamp. A `health_up` event is emitted per asset.
     pub fn submit_health_batch(env: Env, caller: Address, records: Vec<HealthScoreBatch>) {
-        Self::assert_not_globally_paused(&env);
         Self::check_permission(&env, &caller, AdminRole::HealthSubmitter);
 
         if records.len() > 20 {
@@ -1320,16 +1417,18 @@ impl BridgeWatchContract {
         price: i128,
         source: String,
     ) {
-        Self::assert_not_globally_paused(&env);
         Self::check_permission(&env, &caller, AdminRole::PriceSubmitter);
-        
+
+        // Check if asset is locked
+        Self::assert_asset_not_locked(&env, &asset_code);
+
         // Check if caller is a trusted source (if any sources are registered)
         let active_sources = source_trust::get_active_trusted_sources(&env);
-        if active_sources.len() > 0 {
+        if !active_sources.is_empty() {
             // If sources are registered, enforce trust requirement
             source_trust::require_trusted_source(&env, &caller);
         }
-        
+
         let status = Self::load_asset_health(&env, &asset_code);
         Self::assert_asset_accepting_submissions(&status);
         let timestamp = env.ledger().timestamp();
@@ -1456,7 +1555,7 @@ impl BridgeWatchContract {
     /// Verify a single signature against a message and signer metadata.
     #[allow(dead_code, clippy::self_assignment)]
     pub fn verify_signature(env: Env, message: Bytes, signature: SignerSignature) -> bool {
-        let mut signer = Self::load_signer(&env, &signature.signer_id);
+        let signer = Self::load_signer(&env, &signature.signer_id);
 
         if !signer.active {
             panic!("signer is not active");
@@ -1508,8 +1607,8 @@ impl BridgeWatchContract {
             j += 1;
         }
 
-        // Keep signer record writable in this flow for Soroban auth/footprint compatibility.
-        signer.registered_at = signer.registered_at;
+        // Keep signer record in scope for Soroban auth/footprint compatibility.
+        let _ = &signer;
 
         env.storage().persistent().set(
             &ConfigDataKey::SignerNonce(signature.signer_id.clone()),
@@ -1822,6 +1921,171 @@ impl BridgeWatchContract {
         Self::maybe_create_auto_checkpoint(&env, &caller);
     }
 
+    // ---------------------------------------------------------------------------
+    // Asset Locking Functions (issue #557)
+    // ---------------------------------------------------------------------------
+
+    /// Lock an asset to prevent operational changes during maintenance or review.
+    pub fn lock_asset(env: Env, caller: Address, asset_code: String, reason: String) {
+        Self::assert_not_globally_paused(&env);
+        Self::check_permission(&env, &caller, AdminRole::AssetManager);
+
+        let status = Self::load_asset_health(&env, &asset_code);
+        if !status.active {
+            panic!("cannot lock a deregistered asset");
+        }
+
+        let existing_lock: Option<AssetLockState> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::Lock(asset_code.clone()));
+
+        if let Some(lock) = existing_lock {
+            if lock.is_locked {
+                panic!("asset is already locked");
+            }
+        }
+
+        let timestamp = env.ledger().timestamp();
+        let lock_state = AssetLockState {
+            asset_code: asset_code.clone(),
+            is_locked: true,
+            reason: reason.clone(),
+            locked_by: caller.clone(),
+            locked_at: timestamp,
+            unlocked_by: None,
+            unlocked_at: None,
+        };
+
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Lock(asset_code.clone()), &lock_state);
+
+        let mut history: Vec<AssetLockRecord> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::LockHist(asset_code.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        history.push_back(AssetLockRecord {
+            locked: true,
+            reason: reason.clone(),
+            caller: caller.clone(),
+            timestamp,
+        });
+
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::LockHist(asset_code.clone()), &history);
+
+        env.events()
+            .publish((symbol_short!("asset_lck"), asset_code.clone()), true);
+        env.events().publish(
+            (symbol_short!("lock_set"), asset_code.clone()),
+            (caller.clone(), reason, timestamp),
+        );
+    }
+
+    pub fn unlock_asset(env: Env, caller: Address, asset_code: String) {
+        Self::assert_not_globally_paused(&env);
+        Self::check_permission(&env, &caller, AdminRole::AssetManager);
+
+        let status = Self::load_asset_health(&env, &asset_code);
+        if !status.active {
+            panic!("cannot unlock a deregistered asset");
+        }
+
+        let existing_lock: Option<AssetLockState> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::Lock(asset_code.clone()));
+
+        let existing_lock = existing_lock.unwrap_or_else(|| {
+            panic!("asset is not locked");
+        });
+
+        if !existing_lock.is_locked {
+            panic!("asset is not locked");
+        }
+
+        let timestamp = env.ledger().timestamp();
+        let lock_state = AssetLockState {
+            asset_code: asset_code.clone(),
+            is_locked: false,
+            reason: existing_lock.reason.clone(),
+            locked_by: existing_lock.locked_by,
+            locked_at: existing_lock.locked_at,
+            unlocked_by: Some(caller.clone()),
+            unlocked_at: Some(timestamp),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::Lock(asset_code.clone()), &lock_state);
+
+        let mut history: Vec<AssetLockRecord> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::LockHist(asset_code.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        history.push_back(AssetLockRecord {
+            locked: false,
+            reason: String::from_str(&env, "Unlocked"),
+            caller: caller.clone(),
+            timestamp,
+        });
+
+        env.storage()
+            .persistent()
+            .set(&AssetDataKey::LockHist(asset_code.clone()), &history);
+
+        env.events()
+            .publish((symbol_short!("asset_ulk"), asset_code.clone()), false);
+        env.events().publish(
+            (symbol_short!("lock_clr"), asset_code.clone()),
+            (caller.clone(), timestamp),
+        );
+    }
+
+    pub fn get_asset_lock_state(env: Env, asset_code: String) -> Option<AssetLockState> {
+        env.storage()
+            .persistent()
+            .get(&AssetDataKey::Lock(asset_code))
+    }
+
+    pub fn is_asset_locked(env: Env, asset_code: String) -> bool {
+        let lock_state: Option<AssetLockState> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::Lock(asset_code));
+
+        match lock_state {
+            Some(state) => state.is_locked,
+            None => false,
+        }
+    }
+
+    pub fn get_asset_lock_history(env: Env, asset_code: String) -> Vec<AssetLockRecord> {
+        env.storage()
+            .persistent()
+            .get(&AssetDataKey::LockHist(asset_code))
+            .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    fn assert_asset_not_locked(env: &Env, asset_code: &String) {
+        let lock_state: Option<AssetLockState> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::Lock(asset_code.clone()));
+
+        if let Some(state) = lock_state {
+            if state.is_locked {
+                panic!("asset is locked for maintenance");
+            }
+        }
+    }
+
     /// Get all monitored assets
     pub fn get_monitored_assets(env: Env) -> Vec<String> {
         let assets: Vec<String> = env
@@ -1848,6 +2112,78 @@ impl BridgeWatchContract {
         }
 
         active_assets
+    }
+
+    /// List compact per-asset snapshots for off-chain sync (read-only).
+    pub fn list_asset_state_snapshots(env: Env) -> Vec<state_export::AssetStateSnapshot> {
+        Self::collect_asset_state_snapshots(&env)
+    }
+
+    /// Export a versioned, compact snapshot of current contract data (read-only).
+    pub fn export_contract_data_snapshot(env: Env) -> state_export::StateExport {
+        let contract = env.current_contract_address();
+        let snapshots = Self::collect_asset_state_snapshots(&env);
+        state_export::StateExportHelper::assemble_export(&env, contract, snapshots)
+    }
+
+    fn collect_asset_state_snapshots(env: &Env) -> Vec<state_export::AssetStateSnapshot> {
+        let asset_codes = Self::load_registered_assets_sorted(env);
+        let mut snapshots = Vec::new(env);
+
+        for asset_code in asset_codes.iter() {
+            let health: Option<AssetHealth> = env
+                .storage()
+                .persistent()
+                .get(&AssetDataKey::Health(asset_code.clone()));
+
+            let snapshot = match health {
+                Some(record) => {
+                    state_export::StateExportHelper::build_asset_snapshot_from_health(env, &record)
+                }
+                None => {
+                    state_export::StateExportHelper::build_empty_asset_snapshot(env, asset_code)
+                }
+            };
+            snapshots.push_back(snapshot);
+        }
+
+        state_export::StateExportHelper::sort_snapshots(env, &mut snapshots);
+        snapshots
+    }
+
+    fn load_registered_assets_sorted(env: &Env) -> Vec<String> {
+        let assets: Vec<String> = env
+            .storage()
+            .instance()
+            .get(&keys::MONITORED_ASSETS)
+            .unwrap_or_else(|| Vec::new(env));
+
+        let len = assets.len();
+        if len <= 1 {
+            return assets;
+        }
+
+        let mut sorted = assets;
+        let mut i = 0;
+        while i < len {
+            let mut j = i + 1;
+            while j < len {
+                let left = sorted.get(i).unwrap();
+                let right = sorted.get(j).unwrap();
+                if Self::asset_code_greater_than(&left, &right) {
+                    sorted.set(i, right);
+                    sorted.set(j, left.clone());
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+
+        sorted
+    }
+
+    fn asset_code_greater_than(left: &String, right: &String) -> bool {
+        state_export::StateExportHelper::compare_strings(left, right) > 0
     }
 
     // -----------------------------------------------------------------------
@@ -2850,13 +3186,12 @@ impl BridgeWatchContract {
                     trimmed_history_records += 1;
                 }
             }
-            if filtered_history.len() == 0 && history.len() > 0 && policy.preserve_latest_history {
+            if filtered_history.is_empty() && !history.is_empty() && policy.preserve_latest_history
+            {
                 let last_index = history.len() - 1;
                 if let Some(last_entry) = history.get(last_index) {
                     filtered_history.push_back(last_entry);
-                    if trimmed_history_records > 0 {
-                        trimmed_history_records -= 1;
-                    }
+                    trimmed_history_records = trimmed_history_records.saturating_sub(1);
                 }
             }
             env.storage().persistent().set(
@@ -2884,13 +3219,11 @@ impl BridgeWatchContract {
                     trimmed_history_records += 1;
                 }
             }
-            if filtered.len() == 0 && history.len() > 0 && policy.preserve_latest_history {
+            if filtered.is_empty() && !history.is_empty() && policy.preserve_latest_history {
                 let last_index = history.len() - 1;
                 if let Some(last_entry) = history.get(last_index) {
                     filtered.push_back(last_entry);
-                    if trimmed_history_records > 0 {
-                        trimmed_history_records -= 1;
-                    }
+                    trimmed_history_records = trimmed_history_records.saturating_sub(1);
                 }
             }
             env.storage()
@@ -2930,13 +3263,11 @@ impl BridgeWatchContract {
                     trimmed_history_records += 1;
                 }
             }
-            if filtered.len() == 0 && history.len() > 0 && policy.preserve_latest_history {
+            if filtered.is_empty() && !history.is_empty() && policy.preserve_latest_history {
                 let last_index = history.len() - 1;
                 if let Some(last_entry) = history.get(last_index) {
                     filtered.push_back(last_entry);
-                    if trimmed_history_records > 0 {
-                        trimmed_history_records -= 1;
-                    }
+                    trimmed_history_records = trimmed_history_records.saturating_sub(1);
                 }
             }
             env.storage()
@@ -3445,6 +3776,214 @@ impl BridgeWatchContract {
             .persistent()
             .get(&keys::PAUSE_HISTORY)
             .unwrap_or_else(|| Vec::new(&env))
+    }
+
+    // -----------------------------------------------------------------------
+    // Emergency Multi-Signature Halt & Recovery (issue #794)
+    // -----------------------------------------------------------------------
+    //
+    // The single-key `emergency_pause`/`unpause`/`set_mismatch_threshold`
+    // entrypoints above remain available, but they are a single point of
+    // failure: whoever holds the admin key can silence the circuit breaker.
+    // The entrypoints below require a configurable `M`-of-`N` threshold of
+    // Ed25519 signatures from independently-held operator keys, verified
+    // on-chain via `env.crypto().ed25519_verify()`, before pausing,
+    // unpausing, or overriding the mismatch threshold takes effect.
+
+    /// Register (or rotate) the emergency multisig operator set and
+    /// signature threshold. Admin only — this establishes the root of trust
+    /// that the threshold signature scheme below relies on.
+    ///
+    /// # Panics
+    /// - `caller` is not the contract admin.
+    /// - `operators` is empty, exceeds the configured maximum, or contains a
+    ///   duplicate key.
+    /// - `threshold` is zero or greater than the number of operators.
+    pub fn configure_emergency_multisig(
+        env: Env,
+        caller: Address,
+        operators: Vec<BytesN<32>>,
+        threshold: u32,
+    ) {
+        caller.require_auth();
+        let admin: Address = env.storage().instance().get(&keys::ADMIN).unwrap();
+        if caller != admin {
+            panic!("only admin can configure the emergency multisig");
+        }
+
+        let config = emergency_multisig::configure(&env, operators, threshold);
+
+        env.events()
+            .publish((symbol_short!("ems_cfg"), caller), config.threshold);
+    }
+
+    /// Return the current emergency multisig operator set/threshold, if any.
+    pub fn get_emergency_multisig_config(env: Env) -> Option<MultisigConfig> {
+        emergency_multisig::get_config(&env)
+    }
+
+    /// Return the next nonce that emergency multisig signatures must target.
+    pub fn get_emergency_multisig_nonce(env: Env) -> u64 {
+        emergency_multisig::get_nonce(&env) + 1
+    }
+
+    /// Return the emergency multisig action audit log, oldest first.
+    pub fn get_emergency_multisig_log(env: Env) -> Vec<MultisigActionLog> {
+        emergency_multisig::get_log(&env)
+    }
+
+    /// Halt all state-changing contract operations once `threshold` operators
+    /// have signed the `Pause` action for `nonce`.
+    ///
+    /// Unlike `emergency_pause()`, this does not depend on `caller` holding
+    /// any privileged role or key — authorization comes entirely from the
+    /// verified operator signatures, so a compromised admin key cannot be
+    /// used to block this recovery path.
+    ///
+    /// # Panics
+    /// - See [`emergency_multisig::verify_and_execute`].
+    pub fn emergency_pause_multisig(
+        env: Env,
+        reason: String,
+        signatures: Vec<OperatorSignature>,
+        nonce: u64,
+    ) {
+        let approvers = emergency_multisig::verify_and_execute(
+            &env,
+            EmergencyAction::Pause,
+            signatures,
+            nonce,
+        );
+
+        let now = env.ledger().timestamp();
+        env.storage().instance().set(&keys::GLOBAL_PAUSED, &true);
+        env.storage()
+            .instance()
+            .set(&keys::PAUSE_REASON, &reason);
+        env.storage().instance().set(&keys::PAUSED_AT, &now);
+        env.storage()
+            .instance()
+            .set(&keys::UNPAUSE_AVAILABLE_AT, &now);
+
+        let record = PauseRecord {
+            paused: true,
+            reason: reason.clone(),
+            caller: env.current_contract_address(),
+            timestamp: now,
+        };
+        let mut history: Vec<PauseRecord> = env
+            .storage()
+            .persistent()
+            .get(&keys::PAUSE_HISTORY)
+            .unwrap_or_else(|| Vec::new(&env));
+        history.push_back(record);
+        env.storage()
+            .persistent()
+            .set(&keys::PAUSE_HISTORY, &history);
+
+        env.events().publish(
+            (symbol_short!("ems_pause"), nonce),
+            (reason.clone(), approvers.len()),
+        );
+        Self::append_admin_activity(
+            &env,
+            AdminActivityAction::ContractPaused,
+            env.current_contract_address(),
+            reason,
+        );
+    }
+
+    /// Lift a pause once `threshold` operators have signed the `Unpause`
+    /// action for `nonce`.
+    ///
+    /// A threshold of independently-held operator keys is a stronger
+    /// guarantee than the single-admin timelock used by `unpause()`, so this
+    /// entrypoint does not additionally wait on `unpause_available_at` — the
+    /// multisig approval itself is the safety control.
+    ///
+    /// # Panics
+    /// - See [`emergency_multisig::verify_and_execute`].
+    pub fn unpause_emergency_multisig(
+        env: Env,
+        reason: String,
+        signatures: Vec<OperatorSignature>,
+        nonce: u64,
+    ) {
+        let approvers = emergency_multisig::verify_and_execute(
+            &env,
+            EmergencyAction::Unpause,
+            signatures,
+            nonce,
+        );
+
+        let now = env.ledger().timestamp();
+        env.storage().instance().set(&keys::GLOBAL_PAUSED, &false);
+
+        let record = PauseRecord {
+            paused: false,
+            reason: reason.clone(),
+            caller: env.current_contract_address(),
+            timestamp: now,
+        };
+        let mut history: Vec<PauseRecord> = env
+            .storage()
+            .persistent()
+            .get(&keys::PAUSE_HISTORY)
+            .unwrap_or_else(|| Vec::new(&env));
+        history.push_back(record);
+        env.storage()
+            .persistent()
+            .set(&keys::PAUSE_HISTORY, &history);
+
+        env.events().publish(
+            (symbol_short!("ems_unpau"), nonce),
+            (reason.clone(), approvers.len()),
+        );
+        Self::append_admin_activity(
+            &env,
+            AdminActivityAction::ContractUnpaused,
+            env.current_contract_address(),
+            reason,
+        );
+    }
+
+    /// Administrative config override: update the global supply mismatch
+    /// threshold once `threshold` operators have signed the
+    /// `SetMismatchThreshold` action for `nonce`, bypassing the single-admin
+    /// `set_mismatch_threshold()` path.
+    ///
+    /// # Panics
+    /// - See [`emergency_multisig::verify_and_execute`].
+    pub fn set_mismatch_threshold_multisig(
+        env: Env,
+        threshold_bps: i128,
+        signatures: Vec<OperatorSignature>,
+        nonce: u64,
+    ) {
+        let approvers = emergency_multisig::verify_and_execute(
+            &env,
+            EmergencyAction::SetMismatchThreshold(threshold_bps),
+            signatures,
+            nonce,
+        );
+
+        env.storage()
+            .instance()
+            .set(&keys::MISMATCH_THRESHOLD, &threshold_bps);
+
+        env.events().publish(
+            (symbol_short!("ems_thr"), nonce),
+            (threshold_bps, approvers.len()),
+        );
+        Self::emit_contract_event(
+            &env,
+            BridgeWatchEvent::ThresholdUpdated {
+                actor: env.current_contract_address(),
+                scope: String::from_str(&env, "mismatch_threshold_multisig"),
+                value: threshold_bps,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
     }
 
     /// Store operator emergency contact information (e-mail, Telegram, etc.).
@@ -4139,7 +4678,7 @@ impl BridgeWatchContract {
         }
 
         // Validate name (non-empty, ≤ 64 bytes)
-        if name.len() == 0 {
+        if name.is_empty() {
             panic!("config: name must not be empty");
         }
         if name.len() > 64 {
@@ -4147,7 +4686,7 @@ impl BridgeWatchContract {
         }
 
         // Validate description (non-empty, ≤ 256 bytes)
-        if description.len() == 0 {
+        if description.is_empty() {
             panic!("config: description must not be empty");
         }
         if description.len() > 256 {
@@ -4342,7 +4881,7 @@ impl BridgeWatchContract {
             }
         }
 
-        if updates.len() == 0 {
+        if updates.is_empty() {
             panic!("config: bulk update list must not be empty");
         }
         if updates.len() > 20 {
@@ -4941,6 +5480,289 @@ impl BridgeWatchContract {
             panic!("asset monitoring is paused");
         }
     }
+
+    #[allow(dead_code)]
+    fn tier_rank(tier: &StatusTier) -> u32 {
+        match tier {
+            StatusTier::Ok => 0,
+
+            StatusTier::Low => 1,
+
+            StatusTier::Medium => 2,
+
+            StatusTier::High => 3,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn max_tier(a: StatusTier, b: StatusTier) -> StatusTier {
+        if Self::tier_rank(&a) >= Self::tier_rank(&b) {
+            a
+        } else {
+            b
+        }
+    }
+
+    #[allow(dead_code)]
+    fn health_to_tier(score: u32) -> StatusTier {
+        if score >= 80 {
+            StatusTier::Ok
+        } else if score >= 60 {
+            StatusTier::Low
+        } else if score >= 40 {
+            StatusTier::Medium
+        } else {
+            StatusTier::High
+        }
+    }
+
+    #[allow(dead_code)]
+    fn deviation_to_tier(alert: &Option<DeviationAlert>) -> (bool, StatusTier) {
+        match alert {
+            None => (false, StatusTier::Ok),
+
+            Some(a) => match a.severity {
+                DeviationSeverity::Low => (true, StatusTier::Low),
+
+                DeviationSeverity::Medium => (true, StatusTier::Medium),
+
+                DeviationSeverity::High => (true, StatusTier::High),
+            },
+        }
+    }
+
+    #[allow(dead_code)]
+    fn compute_contract_tier_from_counts(rollup: &ContractStatusRollup) -> StatusTier {
+        if rollup.asset_high > 0 || rollup.bridge_high > 0 {
+            StatusTier::High
+        } else if rollup.asset_medium > 0 || rollup.bridge_medium > 0 {
+            StatusTier::Medium
+        } else if rollup.asset_low > 0 || rollup.bridge_low > 0 {
+            StatusTier::Low
+        } else {
+            StatusTier::Ok
+        }
+    }
+
+    #[allow(dead_code)]
+    fn bump_contract_counts_for_asset(env: &Env, prev: Option<StatusTier>, next: StatusTier) {
+        let mut rollup: ContractStatusRollup = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ContractStatusRollup)
+            .unwrap_or(ContractStatusRollup {
+                tier: StatusTier::Ok,
+
+                asset_ok: 0,
+
+                asset_low: 0,
+
+                asset_medium: 0,
+
+                asset_high: 0,
+
+                bridge_ok: 0,
+
+                bridge_low: 0,
+
+                bridge_medium: 0,
+
+                bridge_high: 0,
+
+                timestamp: env.ledger().timestamp(),
+            });
+
+        if let Some(p) = prev {
+            match p {
+                StatusTier::Ok => rollup.asset_ok = rollup.asset_ok.saturating_sub(1),
+
+                StatusTier::Low => rollup.asset_low = rollup.asset_low.saturating_sub(1),
+
+                StatusTier::Medium => rollup.asset_medium = rollup.asset_medium.saturating_sub(1),
+
+                StatusTier::High => rollup.asset_high = rollup.asset_high.saturating_sub(1),
+            }
+        }
+
+        match next {
+            StatusTier::Ok => rollup.asset_ok += 1,
+
+            StatusTier::Low => rollup.asset_low += 1,
+
+            StatusTier::Medium => rollup.asset_medium += 1,
+
+            StatusTier::High => rollup.asset_high += 1,
+        }
+
+        rollup.tier = Self::compute_contract_tier_from_counts(&rollup);
+
+        rollup.timestamp = env.ledger().timestamp();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ContractStatusRollup, &rollup);
+
+        env.events()
+            .publish((symbol_short!("ctr_st"),), rollup.tier.clone());
+    }
+
+    #[allow(dead_code)]
+    fn bump_contract_counts_for_bridge(env: &Env, prev: Option<StatusTier>, next: StatusTier) {
+        let mut rollup: ContractStatusRollup = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ContractStatusRollup)
+            .unwrap_or(ContractStatusRollup {
+                tier: StatusTier::Ok,
+
+                asset_ok: 0,
+
+                asset_low: 0,
+
+                asset_medium: 0,
+
+                asset_high: 0,
+
+                bridge_ok: 0,
+
+                bridge_low: 0,
+
+                bridge_medium: 0,
+
+                bridge_high: 0,
+
+                timestamp: env.ledger().timestamp(),
+            });
+
+        if let Some(p) = prev {
+            match p {
+                StatusTier::Ok => rollup.bridge_ok = rollup.bridge_ok.saturating_sub(1),
+
+                StatusTier::Low => rollup.bridge_low = rollup.bridge_low.saturating_sub(1),
+
+                StatusTier::Medium => rollup.bridge_medium = rollup.bridge_medium.saturating_sub(1),
+
+                StatusTier::High => rollup.bridge_high = rollup.bridge_high.saturating_sub(1),
+            }
+        }
+
+        match next {
+            StatusTier::Ok => rollup.bridge_ok += 1,
+
+            StatusTier::Low => rollup.bridge_low += 1,
+
+            StatusTier::Medium => rollup.bridge_medium += 1,
+
+            StatusTier::High => rollup.bridge_high += 1,
+        }
+
+        rollup.tier = Self::compute_contract_tier_from_counts(&rollup);
+
+        rollup.timestamp = env.ledger().timestamp();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::ContractStatusRollup, &rollup);
+
+        env.events()
+            .publish((symbol_short!("ctr_st"),), rollup.tier.clone());
+    }
+
+    #[allow(dead_code)]
+    fn update_asset_rollup(env: &Env, asset_code: &String) {
+        let health = Self::load_asset_health(env, asset_code);
+
+        let deviation: Option<DeviationAlert> = env
+            .storage()
+            .persistent()
+            .get(&AssetDataKey::DevAlert(asset_code.clone()));
+
+        let health_tier = Self::health_to_tier(health.health_score);
+
+        let (has_alert, deviation_tier) = Self::deviation_to_tier(&deviation);
+
+        let mut tier = Self::max_tier(health_tier, deviation_tier.clone());
+
+        if !health.active {
+            tier = Self::max_tier(tier, StatusTier::Low);
+        }
+
+        if health.paused {
+            tier = Self::max_tier(tier, StatusTier::Low);
+        }
+
+        let prev: Option<AssetStatusRollup> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AssetStatusRollup(asset_code.clone()));
+
+        let prev_tier = prev.as_ref().map(|r| r.tier.clone());
+
+        let rollup = AssetStatusRollup {
+            asset_code: asset_code.clone(),
+
+            tier: tier.clone(),
+
+            health_score: health.health_score,
+
+            has_price_deviation_alert: has_alert,
+
+            price_deviation_tier: deviation_tier,
+
+            paused: health.paused,
+
+            active: health.active,
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::AssetStatusRollup(asset_code.clone()), &rollup);
+
+        Self::bump_contract_counts_for_asset(env, prev_tier, tier.clone());
+
+        env.events()
+            .publish((symbol_short!("asset_st"), asset_code.clone()), tier);
+    }
+
+    #[allow(dead_code)]
+    fn update_bridge_rollup(env: &Env, bridge_id: &String, mismatch_bps: i128, is_critical: bool) {
+        let tier = if is_critical {
+            StatusTier::High
+        } else {
+            StatusTier::Ok
+        };
+
+        let prev: Option<BridgeStatusRollup> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::BridgeStatusRollup(bridge_id.clone()));
+
+        let prev_tier = prev.as_ref().map(|r| r.tier.clone());
+
+        let rollup = BridgeStatusRollup {
+            bridge_id: bridge_id.clone(),
+
+            tier: tier.clone(),
+
+            latest_mismatch_bps: mismatch_bps,
+
+            is_critical,
+
+            timestamp: env.ledger().timestamp(),
+        };
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::BridgeStatusRollup(bridge_id.clone()), &rollup);
+
+        Self::bump_contract_counts_for_bridge(env, prev_tier, tier.clone());
+
+        env.events()
+            .publish((symbol_short!("bridge_st"), bridge_id.clone()), tier);
+    }
+
     // -----------------------------------------------------------------------
     // Liquidity Pool Monitor
     // -----------------------------------------------------------------------
@@ -5176,7 +5998,6 @@ impl BridgeWatchContract {
         bridge_uptime_score: u32,
         manual_override: Option<u32>,
     ) {
-        Self::assert_not_globally_paused(&env);
         Self::check_permission(&env, &caller, AdminRole::HealthSubmitter);
         let status = Self::load_asset_health(&env, &asset_code);
         Self::assert_asset_accepting_submissions(&status);
@@ -5303,8 +6124,7 @@ impl BridgeWatchContract {
             .instance()
             .set(&keys::RISK_SCORE_CONFIG, &config);
 
-        env.events()
-            .publish((symbol_short!("risk_cfg"),), version);
+        env.events().publish((symbol_short!("risk_cfg"),), version);
         Self::maybe_create_auto_checkpoint(&env, &caller);
     }
 
@@ -5332,12 +6152,7 @@ impl BridgeWatchContract {
         volatility_bps: u32,
     ) -> RiskScoreResult {
         Self::validate_score_range(health_score, "health_score");
-        Self::build_risk_score_result(
-            &env,
-            health_score,
-            price_deviation_bps,
-            volatility_bps,
-        )
+        Self::build_risk_score_result(&env, health_score, price_deviation_bps, volatility_bps)
     }
 
     /// Derive a risk score for an asset from stored health and price history.
@@ -5360,11 +6175,7 @@ impl BridgeWatchContract {
         let volatility_bps = if prices.len() < 2 {
             0
         } else {
-            Self::clamp_i128_to_u32(Self::calculate_volatility(
-                env.clone(),
-                prices,
-                period_secs,
-            ))
+            Self::clamp_i128_to_u32(Self::calculate_volatility(env.clone(), prices, period_secs))
         };
 
         Some(Self::build_risk_score_result(
@@ -6401,7 +7212,10 @@ impl BridgeWatchContract {
         Self::append_u32(&mut data, snapshot.risk_score_config.health_weight_bps);
         Self::append_u32(&mut data, snapshot.risk_score_config.price_weight_bps);
         Self::append_u32(&mut data, snapshot.risk_score_config.volatility_weight_bps);
-        Self::append_u32(&mut data, snapshot.risk_score_config.max_price_deviation_bps);
+        Self::append_u32(
+            &mut data,
+            snapshot.risk_score_config.max_price_deviation_bps,
+        );
         Self::append_u32(&mut data, snapshot.risk_score_config.max_volatility_bps);
         Self::append_u32(&mut data, snapshot.risk_score_config.version);
 
@@ -6682,9 +7496,7 @@ impl BridgeWatchContract {
         max_volatility_bps: u32,
         version: u32,
     ) {
-        if health_weight_bps > 10_000
-            || price_weight_bps > 10_000
-            || volatility_weight_bps > 10_000
+        if health_weight_bps > 10_000 || price_weight_bps > 10_000 || volatility_weight_bps > 10_000
         {
             panic!("risk weights must be between 0 and 10000");
         }
@@ -6730,8 +7542,7 @@ impl BridgeWatchContract {
         let normalized_volatility_risk_bps =
             Self::normalize_signal_to_bps(volatility_bps, config.max_volatility_bps);
 
-        let weighted_sum = (normalized_health_risk_bps as u64)
-            * (config.health_weight_bps as u64)
+        let weighted_sum = (normalized_health_risk_bps as u64) * (config.health_weight_bps as u64)
             + (normalized_price_risk_bps as u64) * (config.price_weight_bps as u64)
             + (normalized_volatility_risk_bps as u64) * (config.volatility_weight_bps as u64);
         let risk_score_bps = Self::clamp_bps_u64(weighted_sum / 10_000);
@@ -6953,7 +7764,7 @@ impl BridgeWatchContract {
 
     /// Calculate min and max values in a series.
     pub fn calculate_min_max(_env: Env, values: Vec<i128>) -> (i128, i128) {
-        if values.len() == 0 {
+        if values.is_empty() {
             return (0, 0);
         }
 
@@ -7082,10 +7893,10 @@ impl BridgeWatchContract {
 
         // Calculate all statistics
         let average = Self::calculate_average(env.clone(), prices.clone());
-        let stddev = Self::calculate_stddev(env.clone(), prices.clone());
+        let _stddev = Self::calculate_stddev(env.clone(), prices.clone());
         let volatility = Self::calculate_volatility(env.clone(), prices.clone(), period_secs);
-        let (min_price, max_price) = Self::calculate_min_max(env.clone(), prices.clone());
-        let (p25, median, p75) = Self::calculate_percentiles(env.clone(), prices.clone());
+        let (_min_price, _max_price) = Self::calculate_min_max(env.clone(), prices.clone());
+        let (_p25, _median, _p75) = Self::calculate_percentiles(env.clone(), prices.clone());
 
         // Create and store statistics record
         let stats = Statistics {
@@ -7348,9 +8159,9 @@ impl BridgeWatchContract {
         }
 
         // Normalize
-        cov = cov / n;
-        var_x = var_x / n;
-        var_y = var_y / n;
+        cov /= n;
+        var_x /= n;
+        var_y /= n;
 
         // Calculate correlation
         let std_x = Self::integer_sqrt(var_x);
@@ -7446,7 +8257,9 @@ impl BridgeWatchContract {
         }
         let now = env.ledger().timestamp();
         env.storage().instance().set(&keys::RECOVERY_MODE, &true);
-        env.storage().instance().set(&keys::RECOVERY_REASON, &reason);
+        env.storage()
+            .instance()
+            .set(&keys::RECOVERY_REASON, &reason);
         env.storage()
             .instance()
             .set(&keys::RECOVERY_ENTERED_AT, &now);
@@ -7458,8 +8271,10 @@ impl BridgeWatchContract {
         env.storage()
             .persistent()
             .set(&keys::RECOVERY_STEPS, &steps);
-        env.events()
-            .publish((symbol_short!("rec_entr"), caller.clone()), (reason.clone(), now));
+        env.events().publish(
+            (symbol_short!("rec_entr"), caller.clone()),
+            (reason.clone(), now),
+        );
         Self::append_replay_event(
             &env,
             String::from_str(&env, "rec_entr"),
@@ -7620,7 +8435,10 @@ impl BridgeWatchContract {
         for i in offset..end {
             page.push_back(log.get(i).unwrap());
         }
-        AdminActivityPage { entries: page, total }
+        AdminActivityPage {
+            entries: page,
+            total,
+        }
     }
 
     /// Retrieve admin activity entries for a specific actor (most-recent first).
@@ -7709,12 +8527,7 @@ impl BridgeWatchContract {
     /// # Panics
     /// - `caller` is not the contract admin.
     /// - `weight_bps` is zero.
-    pub fn register_health_source(
-        env: Env,
-        caller: Address,
-        source_id: String,
-        weight_bps: u32,
-    ) {
+    pub fn register_health_source(env: Env, caller: Address, source_id: String, weight_bps: u32) {
         caller.require_auth();
         let admin: Address = env.storage().instance().get(&keys::ADMIN).unwrap();
         if caller != admin {
@@ -7730,7 +8543,7 @@ impl BridgeWatchContract {
             trusted: true,
             registered_at: now,
         };
-        let mut sources: Vec<HealthSource> = env
+        let sources: Vec<HealthSource> = env
             .storage()
             .instance()
             .get(&keys::HEALTH_SOURCES)
@@ -7749,9 +8562,13 @@ impl BridgeWatchContract {
         if !found {
             updated.push_back(source);
         }
-        env.storage().instance().set(&keys::HEALTH_SOURCES, &updated);
-        env.events()
-            .publish((symbol_short!("src_reg"), caller.clone()), source_id.clone());
+        env.storage()
+            .instance()
+            .set(&keys::HEALTH_SOURCES, &updated);
+        env.events().publish(
+            (symbol_short!("src_reg"), caller.clone()),
+            source_id.clone(),
+        );
         Self::append_admin_activity(
             &env,
             AdminActivityAction::AssetRegistered,
@@ -7771,7 +8588,7 @@ impl BridgeWatchContract {
         if caller != admin {
             panic!("only admin can revoke health sources");
         }
-        let mut sources: Vec<HealthSource> = env
+        let sources: Vec<HealthSource> = env
             .storage()
             .instance()
             .get(&keys::HEALTH_SOURCES)
@@ -7791,7 +8608,9 @@ impl BridgeWatchContract {
         if !found {
             panic!("health source not registered");
         }
-        env.storage().instance().set(&keys::HEALTH_SOURCES, &updated);
+        env.storage()
+            .instance()
+            .set(&keys::HEALTH_SOURCES, &updated);
         env.events()
             .publish((symbol_short!("src_rev"), caller), source_id);
     }
@@ -7843,9 +8662,10 @@ impl BridgeWatchContract {
             bridge_uptime_score,
             submitted_at: now,
         };
-        env.storage()
-            .persistent()
-            .set(&HealthSourceDataKey::Entry(source_id.clone(), asset_code.clone()), &entry);
+        env.storage().persistent().set(
+            &HealthSourceDataKey::Entry(source_id.clone(), asset_code.clone()),
+            &entry,
+        );
         env.events().publish(
             (symbol_short!("ms_hlth"), caller.clone(), asset_code.clone()),
             (source_id.clone(), health_score, now),
@@ -8065,14 +8885,14 @@ impl BridgeWatchContract {
         name: String,
     ) {
         caller.require_auth();
-        
+
         // Check admin permission
         let admin: Address = env
             .storage()
             .instance()
             .get(&keys::ADMIN)
             .unwrap_or_else(|| panic!("contract not initialized"));
-        
+
         if caller != admin {
             acl::require_permission(&env, &caller, &admin, &Permission::ManageConfig);
         }
@@ -8107,14 +8927,14 @@ impl BridgeWatchContract {
     /// ```
     pub fn revoke_trusted_source(env: Env, caller: Address, source_address: Address) {
         caller.require_auth();
-        
+
         // Check admin permission
         let admin: Address = env
             .storage()
             .instance()
             .get(&keys::ADMIN)
             .unwrap_or_else(|| panic!("contract not initialized"));
-        
+
         if caller != admin {
             acl::require_permission(&env, &caller, &admin, &Permission::ManageConfig);
         }
@@ -8228,6 +9048,35 @@ mod tests {
             sources.push_back(String::from_str(env, venue));
         }
         sources
+    }
+
+    // -----------------------------------------------------------------------
+    // Contract data snapshot tests (issue #453)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_export_contract_data_snapshot_returns_stable_ordering() {
+        let (env, client, admin) = setup();
+        let usdc = String::from_str(&env, "USDC");
+        let eurc = String::from_str(&env, "EURC");
+
+        client.register_asset(&admin, &eurc);
+        client.register_asset(&admin, &usdc);
+        client.submit_health(&admin, &usdc, &90, &88, &92, &91);
+        client.submit_health(&admin, &eurc, &70, &68, &72, &71);
+
+        let snapshots = client.list_asset_state_snapshots();
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots.get(0).unwrap().asset_code, eurc);
+        assert_eq!(snapshots.get(1).unwrap().asset_code, usdc);
+
+        let export = client.export_contract_data_snapshot();
+        assert_eq!(export.version, state_export::STATE_EXPORT_VERSION);
+        assert_eq!(export.metadata.item_count, 2);
+        assert!(!export.state_hash.is_empty());
+
+        let export_again = client.export_contract_data_snapshot();
+        assert_eq!(export.state_hash, export_again.state_hash);
     }
 
     // -----------------------------------------------------------------------
@@ -8427,7 +9276,6 @@ mod tests {
 
         env.ledger().set_timestamp(200);
         client.record_supply_mismatch(&bridge, &asset, &1_000_000, &1_002_000);
-
         env.ledger().set_timestamp(500);
         client.record_supply_mismatch(&bridge, &asset, &1_000_000, &1_003_000);
 
@@ -10945,7 +11793,9 @@ mod tests {
         env.ledger().set_timestamp(300);
         client.submit_price(&admin, &asset, &1_000_000, &source);
 
-        let result = client.get_asset_risk_score(&asset, &StatPeriod::Day).unwrap();
+        let result = client
+            .get_asset_risk_score(&asset, &StatPeriod::Day)
+            .unwrap();
         assert_eq!(result.health_score, 75);
         assert_eq!(result.price_deviation_bps, 0);
         assert_eq!(result.volatility_bps, 0);
@@ -11840,8 +12690,14 @@ mod tests {
         client.record_recovery_step(&admin, &String::from_str(&env, "step three"));
         let steps = client.get_recovery_steps();
         assert_eq!(steps.len(), 3);
-        assert_eq!(steps.get(0).unwrap().description, String::from_str(&env, "step one"));
-        assert_eq!(steps.get(2).unwrap().description, String::from_str(&env, "step three"));
+        assert_eq!(
+            steps.get(0).unwrap().description,
+            String::from_str(&env, "step one")
+        );
+        assert_eq!(
+            steps.get(2).unwrap().description,
+            String::from_str(&env, "step three")
+        );
     }
 
     #[test]
@@ -11941,8 +12797,14 @@ mod tests {
         client.exit_recovery_mode(&admin);
         let entries = client.get_admin_activity_by_actor(&admin, &10);
         // Most recent (RecoveryExited) should come first in the result
-        assert_eq!(entries.get(0).unwrap().action, AdminActivityAction::RecoveryExited);
-        assert_eq!(entries.get(1).unwrap().action, AdminActivityAction::RecoveryEntered);
+        assert_eq!(
+            entries.get(0).unwrap().action,
+            AdminActivityAction::RecoveryExited
+        );
+        assert_eq!(
+            entries.get(1).unwrap().action,
+            AdminActivityAction::RecoveryEntered
+        );
     }
 
     #[test]
@@ -12198,5 +13060,239 @@ mod tests {
         let entry = page.entries.get(0).unwrap();
         assert_eq!(entry.event_type, String::from_str(&env, "rec_entr"));
         assert_eq!(entry.actor, admin);
+    }
+
+    // -----------------------------------------------------------------------
+    // Emergency Multi-Signature Halt & Recovery (issue #794)
+    // -----------------------------------------------------------------------
+
+    /// Deterministically derive an Ed25519 keypair from a single seed byte.
+    fn emergency_multisig_keypair(seed: u8) -> (ed25519_dalek::SigningKey, [u8; 32]) {
+        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[seed; 32]);
+        let verifying_key = signing_key.verifying_key().to_bytes();
+        (signing_key, verifying_key)
+    }
+
+    fn emergency_multisig_sign(
+        env: &Env,
+        signing_key: &ed25519_dalek::SigningKey,
+        message: &Bytes,
+    ) -> BytesN<64> {
+        use ed25519_dalek::Signer;
+        let mut buf = [0u8; 512];
+        let len = message.len() as usize;
+        message.copy_into_slice(&mut buf[..len]);
+        let signature = signing_key.sign(&buf[..len]);
+        BytesN::from_array(env, &signature.to_bytes())
+    }
+
+    /// Configure a 2-of-3 emergency multisig and return the operators' keys.
+    fn setup_emergency_multisig(
+        env: &Env,
+        client: &BridgeWatchContractClient<'static>,
+        admin: &Address,
+    ) -> (
+        [(ed25519_dalek::SigningKey, [u8; 32]); 3],
+        Vec<BytesN<32>>,
+    ) {
+        let keys = [
+            emergency_multisig_keypair(1),
+            emergency_multisig_keypair(2),
+            emergency_multisig_keypair(3),
+        ];
+        let mut operators: Vec<BytesN<32>> = Vec::new(env);
+        for (_, raw) in keys.iter() {
+            operators.push_back(BytesN::from_array(env, raw));
+        }
+        client.configure_emergency_multisig(admin, &operators, &2);
+        (keys, operators)
+    }
+
+    #[test]
+    fn test_configure_emergency_multisig_stores_operator_set() {
+        let (env, client, admin) = setup();
+        let (_keys, operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let config = client.get_emergency_multisig_config().unwrap();
+        assert_eq!(config.threshold, 2);
+        assert_eq!(config.operators.len(), 3);
+        assert_eq!(config.operators, operators);
+        assert_eq!(client.get_emergency_multisig_nonce(), 1);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_configure_emergency_multisig_rejects_non_admin() {
+        let (env, client, _admin) = setup();
+        let attacker = Address::generate(&env);
+        let (_sk, pk) = emergency_multisig_keypair(1);
+        let mut operators: Vec<BytesN<32>> = Vec::new(&env);
+        operators.push_back(BytesN::from_array(&env, &pk));
+        client.configure_emergency_multisig(&attacker, &operators, &1);
+    }
+
+    #[test]
+    fn test_emergency_pause_multisig_halts_writes_without_admin_key() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let nonce = client.get_emergency_multisig_nonce();
+        let message =
+            emergency_multisig::build_message(&env, &EmergencyAction::Pause, nonce);
+
+        let mut sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &message),
+            });
+        }
+
+        // No admin/caller identity is involved at all — approval comes purely
+        // from the verified operator signatures.
+        client.emergency_pause_multisig(&String::from_str(&env, "compromised admin key"), &sigs, &nonce);
+
+        assert!(client.is_paused());
+    }
+
+    #[test]
+    #[should_panic(expected = "contract is globally paused")]
+    fn test_emergency_pause_multisig_blocks_subsequent_writes() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let nonce = client.get_emergency_multisig_nonce();
+        let message = emergency_multisig::build_message(&env, &EmergencyAction::Pause, nonce);
+        let mut sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &message),
+            });
+        }
+        client.emergency_pause_multisig(&String::from_str(&env, "incident"), &sigs, &nonce);
+
+        // Registering an asset while globally paused must fail — the
+        // multisig pause halts writes just like the single-admin path.
+        client.register_asset(&admin, &String::from_str(&env, "USDC"));
+    }
+
+    #[test]
+    fn test_unpause_emergency_multisig_recovers_without_timelock() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let pause_nonce = client.get_emergency_multisig_nonce();
+        let pause_message =
+            emergency_multisig::build_message(&env, &EmergencyAction::Pause, pause_nonce);
+        let mut pause_sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            pause_sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &pause_message),
+            });
+        }
+        client.emergency_pause_multisig(
+            &String::from_str(&env, "incident"),
+            &pause_sigs,
+            &pause_nonce,
+        );
+        assert!(client.is_paused());
+
+        // Recovery is available immediately — a fresh threshold of operator
+        // signatures is itself the safety control, unlike the single-admin
+        // `unpause()` path which additionally waits out a 24h timelock.
+        let unpause_nonce = client.get_emergency_multisig_nonce();
+        let unpause_message =
+            emergency_multisig::build_message(&env, &EmergencyAction::Unpause, unpause_nonce);
+        let mut unpause_sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            unpause_sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &unpause_message),
+            });
+        }
+        client.unpause_emergency_multisig(
+            &String::from_str(&env, "resolved"),
+            &unpause_sigs,
+            &unpause_nonce,
+        );
+
+        assert!(!client.is_paused());
+    }
+
+    #[test]
+    fn test_set_mismatch_threshold_multisig_overrides_admin_path() {
+        let (env, client, admin) = setup();
+        env.ledger().set_timestamp(1_000_000);
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let nonce = client.get_emergency_multisig_nonce();
+        let action = EmergencyAction::SetMismatchThreshold(42);
+        let message = emergency_multisig::build_message(&env, &action, nonce);
+
+        let mut sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &message),
+            });
+        }
+
+        client.set_mismatch_threshold_multisig(&42, &sigs, &nonce);
+
+        let bridge = String::from_str(&env, "CIRCLE_USDC");
+        let asset = String::from_str(&env, "USDC");
+        client.record_supply_mismatch(&bridge, &asset, &1_000_000, &1_005_000);
+        let m = client.get_supply_mismatches(&bridge).get(0).unwrap();
+        assert!(m.is_critical);
+    }
+
+    #[test]
+    #[should_panic(expected = "insufficient emergency multisig signatures")]
+    fn test_emergency_pause_multisig_rejects_below_threshold() {
+        let (env, client, admin) = setup();
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let nonce = client.get_emergency_multisig_nonce();
+        let message =
+            emergency_multisig::build_message(&env, &EmergencyAction::Pause, nonce);
+        let mut sigs: Vec<OperatorSignature> = Vec::new(&env);
+        let (sk0, raw0) = &keys[0];
+        sigs.push_back(OperatorSignature {
+            operator: BytesN::from_array(&env, raw0),
+            signature: emergency_multisig_sign(&env, sk0, &message),
+        });
+
+        client.emergency_pause_multisig(&String::from_str(&env, "not enough sigs"), &sigs, &nonce);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid emergency multisig nonce")]
+    fn test_emergency_pause_multisig_rejects_replayed_signatures() {
+        let (env, client, admin) = setup();
+        let (keys, _operators) = setup_emergency_multisig(&env, &client, &admin);
+
+        let nonce = client.get_emergency_multisig_nonce();
+        let message =
+            emergency_multisig::build_message(&env, &EmergencyAction::Pause, nonce);
+        let mut sigs: Vec<OperatorSignature> = Vec::new(&env);
+        for (sk, raw) in keys.iter().take(2) {
+            sigs.push_back(OperatorSignature {
+                operator: BytesN::from_array(&env, raw),
+                signature: emergency_multisig_sign(&env, sk, &message),
+            });
+        }
+
+        client.emergency_pause_multisig(&String::from_str(&env, "first"), &sigs, &nonce);
+        assert!(client.is_paused());
+        client.unpause(&admin, &String::from_str(&env, "not yet"));
+
+        // Replaying the exact same (already-consumed) nonce/signatures must
+        // be rejected even though the signatures were valid the first time.
+        client.emergency_pause_multisig(&String::from_str(&env, "replay"), &sigs, &nonce);
     }
 }

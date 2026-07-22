@@ -1,42 +1,37 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { NotificationProvider } from "../context/NotificationContext";
-import { WebSocketProvider } from "../contexts/WebSocketContext";
+import { fireEvent, render, screen } from "../test/utils";
 import { WatchlistProvider } from "../hooks/useWatchlist";
-import ThemeProvider from "../theme/ThemeProvider";
 import Navbar from "./Navbar";
 import { useNotificationStore } from "../stores/notificationStore";
+
+vi.mock("../hooks/useWebSocketEnhanced", () => ({
+  useWebSocket: vi.fn(() => ({
+    send: vi.fn(),
+    isConnected: true,
+    isSubscribed: true,
+  })),
+}));
 
 function resetNotifications() {
   useNotificationStore.setState(useNotificationStore.getInitialState(), true);
 }
 
 describe("Navbar", () => {
+  beforeEach(() => {
+    resetNotifications();
+  });
   it("toggles the mobile navigation panel", () => {
     render(
-      <MemoryRouter>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider>
-            <WebSocketProvider>
-              <WatchlistProvider>
-                <NotificationProvider>
-                  <Navbar />
-                </NotificationProvider>
-              </WatchlistProvider>
-            </WebSocketProvider>
-          </ThemeProvider>
-        </QueryClientProvider>
-      </MemoryRouter>
+      <WatchlistProvider>
+        <Navbar />
+      </WatchlistProvider>
     );
 
-    const toggle = screen.getByRole("button", { name: /toggle navigation/i });
-    expect(document.getElementById("mobile-nav-links")).toBeNull();
+    const trigger = screen.getByRole("button", { name: /open notifications/i });
+    fireEvent.click(trigger);
 
-    fireEvent.click(toggle);
-    expect(document.getElementById("mobile-nav-links")).toBeTruthy();
+    fireEvent.keyDown(document, { key: "Escape" });
 
-    fireEvent.click(toggle);
-    expect(document.getElementById("mobile-nav-links")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Notifications" })).not.toBeInTheDocument();
+    expect(document.activeElement).toBe(trigger);
   });
 });

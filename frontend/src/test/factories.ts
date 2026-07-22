@@ -64,7 +64,7 @@ export const buildDependencyGraph = (overrides?: Partial<DependencyGraph>, seed 
     label: `Service ${i}`,
     description: `Description for service ${i}`,
     type: seededRandom(seed + i) > 0.5 ? "bridge" : "rpc",
-    status: (seededRandom(seed + i + 10) > 0.9 ? "degraded" : "healthy") as any,
+    status: (seededRandom(seed + i + 10) > 0.9 ? "degraded" : "healthy") as "degraded" | "healthy",
     impactHint: "High impact",
   }));
 

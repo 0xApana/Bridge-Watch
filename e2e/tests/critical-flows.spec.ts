@@ -7,6 +7,7 @@ import { mockCoreApi } from "../utils/mockApi";
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("bridge-watch:onboarding:v1", "true");
+    window.localStorage.setItem("bridge-watch:dashboard-tour:v1", JSON.stringify({ completed: true, lastStep: 0, seen: true }));
   });
   await mockCoreApi(page);
 });
@@ -17,18 +18,19 @@ test("navigates landing to dashboard and renders core widgets", async ({ page })
 
   await landingPage.goto();
   await landingPage.openDashboard();
+  await page.waitForLoadState("networkidle");
   await dashboardPage.assertLoaded();
 });
 
-test("opens widget customization and applies dashboard interactions", async ({ page }) => {
+test("opens export dialog and interacts with dashboard toolbar", async ({ page }) => {
   const dashboardPage = new DashboardPage(page);
 
-  await page.goto("/dashboard");
+  await page.goto("/dashboard", { waitUntil: "networkidle" });
   await dashboardPage.assertLoaded();
-  await dashboardPage.openCustomizationPanel();
+  await dashboardPage.openExportDialog();
 
-  await page.getByRole("button", { name: "Operations" }).click();
-  await expect(page.getByText("Layout import/export payload")).toBeVisible();
+  await page.getByRole("button", { name: "Close", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: "Export data" })).toBeVisible();
 });
 
 test("loads bridges page and bridge cards from mocked data", async ({ page }) => {

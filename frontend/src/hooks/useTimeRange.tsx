@@ -75,6 +75,22 @@ function readPersistedState(): PersistedTimeRangeState {
   }
 }
 
+function searchParamsEqual(a: string, b: string): boolean {
+  const paramsA = new URLSearchParams(a);
+  const paramsB = new URLSearchParams(b);
+
+  const keys = new Set([...paramsA.keys(), ...paramsB.keys()]);
+  for (const key of keys) {
+    const valsA = paramsA.getAll(key).sort();
+    const valsB = paramsB.getAll(key).sort();
+    if (valsA.length !== valsB.length) return false;
+    for (let i = 0; i < valsA.length; i++) {
+      if (valsA[i] !== valsB[i]) return false;
+    }
+  }
+  return true;
+}
+
 function parseStateFromSearch(search: string): Partial<PersistedTimeRangeState> {
   const params = new URLSearchParams(search);
 
@@ -223,9 +239,8 @@ export function TimeRangeProvider({ children }: { children: ReactNode }) {
       });
 
     const nextSearch = params.toString();
-    const currentSearch = location.search.replace(/^\?/, "");
 
-    if (nextSearch !== currentSearch) {
+    if (!searchParamsEqual(nextSearch, location.search)) {
       navigate({ search: nextSearch }, { replace: true });
     }
   }, [

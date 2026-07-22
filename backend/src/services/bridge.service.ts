@@ -6,6 +6,7 @@ import { getStellarAssetSupply } from "../utils/stellar.js";
 import { getEthereumTokenBalance } from "../utils/ethereum.js";
 import { withRetry } from "../utils/retry.js";
 import { getDatabase } from "../database/connection.js";
+import { getWormholeBridgeWatcher, type EvmLockDetail } from "./ethereum/wormholeWatcher.service.js";
 
 export interface BridgeStatus {
   name: string;
@@ -31,6 +32,8 @@ export interface BridgeStats {
   totalTransactions: number;
   averageTransferTime: number;
   uptime30d: number;
+  /** Per-chain EVM lock contract balances, present for multi-chain (e.g. Wormhole) bridges. */
+  evmLockDetails?: EvmLockDetail[];
 }
 
 export interface ReserveVerificationSummary {
@@ -56,6 +59,7 @@ export interface VerificationResult {
 export class BridgeService {
   private readonly reserveVerificationService = new ReserveVerificationService();
   private readonly bridgeTransactionService = new BridgeTransactionService();
+  private readonly wormholeWatcher = getWormholeBridgeWatcher();
 
   async getAllBridgeStatuses(): Promise<{ bridges: BridgeStatus[] }> {
     logger.info("Fetching all bridge statuses");
@@ -97,6 +101,7 @@ export class BridgeService {
     if (!bridge) return null;
 
     const summary = await this.bridgeTransactionService.getBridgeTransactionSummary(bridgeName);
+    const evmLockDetails = await this.wormholeWatcher.fetchLockBalances({ bridgeName });
 
     return {
       name: bridge.name,
@@ -110,6 +115,7 @@ export class BridgeService {
       totalTransactions: summary.totalTransactions,
       averageTransferTime: summary.averageConfirmationTimeSeconds,
       uptime30d: bridge.status === "healthy" ? 100 : 75,
+      ...(evmLockDetails.length ? { evmLockDetails } : {}),
     };
   }
 
@@ -146,15 +152,24 @@ export class BridgeService {
       tokenAddress = config.EURC_TOKEN_ADDRESS;
     }
 
-    if (!bridgeAddress || !tokenAddress) {
-      throw new Error(`Bridge or Token address not configured for Ethereum reserves of ${assetCode}`);
+    if (bridgeAddress && tokenAddress) {
+      return withRetry(
+        () => getEthereumTokenBalance(tokenAddress!, bridgeAddress!),
+        config.RETRY_MAX,
+        1000
+      );
     }
 
-    return withRetry(
-      () => getEthereumTokenBalance(tokenAddress!, bridgeAddress!),
-      config.RETRY_MAX,
-      1000
-    );
+    // Multi-chain EVM lock contracts (e.g. Wormhole) registered in evm_lock_contracts
+    if (assetCode === config.WORMHOLE_WATCHED_ASSET_SYMBOL && config.WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER) {
+      return withRetry(
+        () => this.wormholeWatcher.getTotalLocked(assetCode),
+        config.RETRY_MAX,
+        1000
+      );
+    }
+
+    throw new Error(`Bridge or Token address not configured for Ethereum reserves of ${assetCode}`);
   }
 
   /**

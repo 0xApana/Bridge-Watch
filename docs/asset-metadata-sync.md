@@ -20,6 +20,25 @@ Conflict resolution is deterministic:
 - If multiple sources provide different values for the same field, the highest-priority source wins.
 - The conflicting field names are recorded in `asset_metadata_sync_runs.conflicts`.
 
+## Provider Allowlist
+
+Asset metadata sync respects the provider allowlist. When at least one allowlist
+entry exists, only providers explicitly allowed are used for external metadata
+fetches. The built-in static registry remains available regardless of allowlist
+state.
+
+Provider keys for metadata sources:
+
+- `coingecko`
+- `stellar-expert`
+
+Allowlist endpoints:
+
+- `GET /api/v1/providers/allowlist`
+- `GET /api/v1/providers/allowlist/:providerKey`
+- `PUT /api/v1/admin/providers/allowlist/:providerKey`
+- `DELETE /api/v1/admin/providers/allowlist/:providerKey`
+
 ## Supported Sync Fields
 
 The selective refresh engine supports:

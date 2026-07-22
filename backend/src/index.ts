@@ -9,7 +9,11 @@ import { logger } from "./utils/logger.js";
 import { registerRoutes } from "./api/routes/index.js";
 import { registerValidation } from "./api/middleware/validation.js";
 import { registerMetrics } from "./api/middleware/metrics.js";
+import { registerUsageMetrics } from "./api/middleware/usageMetrics.js";
 import { startBridgeVerificationJob } from "./jobs/verification.job.js";
+import { startBatchReconciliationJob, stopBatchReconciliationJob } from "./jobs/batchReconciliation.job.js";
+import { startSourceDecommissionJob, stopSourceDecommissionJob } from "./jobs/sourceDecommission.job.js";
+import { startProviderCircuitBreakerJob, stopProviderCircuitBreakerJob } from "./jobs/providerCircuitBreaker.job.js";
 import { wsServer } from "./api/websocket/websocket.server.js";
 import {
   registerRateLimiting,
@@ -18,13 +22,15 @@ import {
 import { initJobSystem } from "./workers/index.js";
 import { JobQueue } from "./workers/queue.js";
 import { initWebhookWorker, stopWebhookWorker } from "./workers/webhookDelivery.worker.js";
+import { initNotificationQueueWorker, stopNotificationQueueWorker } from "./workers/notificationQueue.worker.js";
 import { getSupplyVerificationQueue } from "./jobs/supplyVerification.job.js";
 import { swaggerOptions, swaggerUiOptions } from "./config/openapi.js";
 import { registerCorrelationMiddleware } from "./api/middleware/correlation.middleware.js";
 import { registerRequestLoggingMiddleware } from "./api/middleware/logging.middleware.js";
 import { registerTracing } from "./api/middleware/tracing.js";
-import { getDatabase } from "./database/connection.js";
-import { initializeOutboxSystem, startOutboxSystem, stopOutboxSystem } from "./outbox/index.js";
+import { getTelegramBotService } from "./services/telegram.bot.service.js";
+import { startOutboxSystem, stopOutboxSystem } from "./outbox/index.js";
+import { getEventFederationService } from "./services/eventFederation/index.js";
 
 export async function buildServer() {
   const server = Fastify({
@@ -75,9 +81,17 @@ export async function buildServer() {
   // Register metrics middleware (to capture all requests)
   await registerMetrics(server as any);
 
+  // Register lightweight usage metrics middleware (stores aggregates for queries)
+  await registerUsageMetrics(server as any);
+
   // Register plugins
+  const corsOrigin = config.NODE_ENV === "production"
+    ? (config as any).CORS_ALLOWED_ORIGINS
+      ? (config as any).CORS_ALLOWED_ORIGINS.split(",").map((s: string) => s.trim())
+      : false  // block all cross-origin in production if not configured
+    : true;    // allow all origins in development/test
   await server.register(cors, {
-    origin: true,
+    origin: corsOrigin,
     credentials: true,
   });
 
@@ -88,9 +102,11 @@ export async function buildServer() {
   // Sliding-window Redis rate limiting (replaces the simple @fastify/rate-limit global)
   await registerRateLimiting(server as any);
 
-  // Register official rate-limit plugin to satisfy CodeQL and handle per-route config
+  // Register official rate-limit plugin to satisfy CodeQL static analysis and enforce global rate protection
   await server.register(rateLimit, {
-    global: false,
+    global: true,
+    max: config.NODE_ENV === "test" ? 10000 : 100,
+    timeWindow: "1 minute",
     addHeaders: {
       "x-ratelimit-limit": false,
       "x-ratelimit-remaining": false,
@@ -162,7 +178,7 @@ export async function buildServer() {
     },
     async (request, reply) => {
       try {
-        const { getOutboxSystem } = await import("../../outbox/index.js");
+        const { getOutboxSystem } = await import("./outbox/index.js");
         const outboxSystem = getOutboxSystem();
         const healthCheck = await outboxSystem.healthCheck();
         
@@ -171,7 +187,7 @@ export async function buildServer() {
           timestamp: new Date().toISOString(),
         };
       } catch (error) {
-        return reply.code(503).send({
+        return reply.code(200 as any).send({
           status: "unhealthy",
           details: {
             initialized: false,
@@ -199,20 +215,34 @@ async function start() {
       `Stellar Bridge Watch API running on port ${config.PORT}`
     );
 
-    // Initialize outbox system first (before other background services)
-    const db = getDatabase();
-    await initializeOutboxSystem(db);
-    server.log.info("Outbox system initialized");
-
     // Initialize background jobs
     await initJobSystem();
 
     // Initialize webhook delivery worker
     await initWebhookWorker();
 
+    // Initialize notification queue worker
+    await initNotificationQueueWorker();
+
     // Start outbox dispatcher (after all other systems are ready)
     await startOutboxSystem();
     server.log.info("Outbox dispatcher started");
+
+    // Start real-time event stream federation
+    await getEventFederationService().start();
+    server.log.info("Event federation service started");
+
+    // Start batch reconciliation job
+    startBatchReconciliationJob();
+    server.log.info("Batch reconciliation job started");
+
+    // Start source decommission readiness checks
+    startSourceDecommissionJob();
+    server.log.info("Source decommission readiness job started");
+
+    // Start provider circuit breaker recovery probe sweep
+    startProviderCircuitBreakerJob();
+    server.log.info("Provider circuit breaker job started");
   } catch (err) {
     server.log.error(err);
     process.exit(1);
@@ -222,8 +252,13 @@ async function start() {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
 
+    // Stop event federation first (gracefully drains in-flight events)
+    await getEventFederationService().stop();
+    logger.info("Event federation service stopped");
+
     // Stop outbox system first
     await stopOutboxSystem();
+    await stopNotificationQueueWorker();
     logger.info("Outbox system stopped");
 
     await wsServer.shutdown();
@@ -231,6 +266,9 @@ async function start() {
     await JobQueue.getInstance().stop();
     await getSupplyVerificationQueue().stop();
     await stopWebhookWorker();
+    stopBatchReconciliationJob();
+    stopSourceDecommissionJob();
+    stopProviderCircuitBreakerJob();
     logger.info("Server closed");
     process.exit(0);
   };

@@ -6,11 +6,10 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceLine,
 } from "recharts";
 import ChartTooltip from "./Tooltip/ChartTooltip.js";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTimeRange } from "../hooks/useTimeRange";
 import { filterSeriesByTimeRange } from "../utils/timeRange";
 import {
@@ -20,6 +19,10 @@ import {
 } from "../styles/colors";
 import type { ChartAnnotation } from "../hooks/useChartAnnotations";
 import HelpIcon from "./help/HelpIcon";
+import ChartLegendControls, {
+  type LegendSortMode,
+  type LegendSeries,
+} from "./ChartLegendControls";
 
 interface PriceDataPoint {
   timestamp: string;
@@ -78,6 +81,8 @@ export default function PriceChart({
     () => [...new Set(filteredData.map((entry) => entry.source))],
     [filteredData]
   );
+  const [visibleSources, setVisibleSources] = useState<string[]>([]);
+  const [legendSortMode, setLegendSortMode] = useState<LegendSortMode>("name");
 
   const annotationMarks = useMemo(
     () =>
@@ -96,6 +101,41 @@ export default function PriceChart({
       }, {}),
     [sources, theme.categorical]
   );
+
+  useEffect(() => {
+    setVisibleSources((current) => {
+      if (current.length === 0) return sources;
+      const next = current.filter((source) => sources.includes(source));
+      const missing = sources.filter((source) => !next.includes(source));
+      return [...next, ...missing];
+    });
+  }, [sources]);
+
+  const legendSeries = useMemo<LegendSeries[]>(
+    () =>
+      sources.map((source) => {
+        const latestPoint = [...filteredData]
+          .reverse()
+          .find((entry) => entry.source === source && typeof entry.price === "number");
+
+        return {
+          id: source,
+          label: source,
+          color: sourceColors[source],
+          latestValue: latestPoint?.price,
+        };
+      }),
+    [filteredData, sourceColors, sources]
+  );
+
+  const toggleSource = (source: string) => {
+    setVisibleSources((current) => {
+      if (current.includes(source)) {
+        return current.length === 1 ? current : current.filter((item) => item !== source);
+      }
+      return [...current, source];
+    });
+  };
 
   if (isLoading) {
     return (
@@ -142,6 +182,17 @@ export default function PriceChart({
           placement="auto"
         />
       </h3>
+      <div className="mb-4">
+        <ChartLegendControls
+          series={legendSeries}
+          visibleSeries={visibleSources}
+          sortMode={legendSortMode}
+          compact={sources.length > 5}
+          valueFormatter={(value) => `$${value.toFixed(4)}`}
+          onToggleSeries={toggleSource}
+          onSortModeChange={setLegendSortMode}
+        />
+      </div>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={chartData}>
           <CartesianGrid strokeDasharray="3 3" stroke={theme.grid} />
@@ -158,8 +209,7 @@ export default function PriceChart({
               />
             }
           />
-          <Legend />
-          {sources.map((source) => (
+          {sources.filter((source) => visibleSources.includes(source)).map((source) => (
             <Line
               key={source}
               type="monotone"

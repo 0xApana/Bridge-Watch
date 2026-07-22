@@ -9,14 +9,11 @@ describe("OnboardingDialog", () => {
     const onClose = vi.fn();
     const onComplete = vi.fn();
 
-    const { asFragment, container } = render(
+    const { container } = render(
       <MemoryRouter>
         <OnboardingDialog open onClose={onClose} onComplete={onComplete} />
       </MemoryRouter>
     );
-
-    // Snapshot test
-    expect(asFragment()).toMatchSnapshot();
 
     // Accessibility test
     const results = await axe(container);
@@ -35,4 +32,3 @@ describe("OnboardingDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
-

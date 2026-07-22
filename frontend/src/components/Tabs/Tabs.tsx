@@ -207,7 +207,7 @@ export function Tab({
 export interface TabPanelProps {
   /** Must match the id passed to the corresponding Tab */
   id: string;
-  children: ReactNode;
+  children?: ReactNode;
   className?: string;
   /** When true the panel stays mounted but hidden; when false it is unmounted */
   keepMounted?: boolean;

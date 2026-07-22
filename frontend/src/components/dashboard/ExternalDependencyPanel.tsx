@@ -3,6 +3,7 @@ import {
   getExternalDependencies,
   type ExternalDependency,
 } from "../../services/api";
+import { CollapsibleWidget } from "./CollapsibleWidget";
 
 function statusClasses(status: ExternalDependency["status"]) {
   switch (status) {
@@ -41,23 +42,29 @@ export default function ExternalDependencyPanel() {
 
   if (isLoading) {
     return (
-      <section className="bg-stellar-card border border-stellar-border rounded-lg p-6">
-        <h2 className="text-xl font-semibold text-white">External Dependencies</h2>
-        <p className="mt-3 text-sm text-stellar-text-secondary">
+      <CollapsibleWidget
+        id="external-dependencies"
+        title="External Dependencies"
+        defaultCollapsed={true}
+      >
+        <p className="text-sm text-stellar-text-secondary">
           Loading provider heartbeat data...
         </p>
-      </section>
+      </CollapsibleWidget>
     );
   }
 
   if (isError || !data) {
     return (
-      <section className="bg-stellar-card border border-stellar-border rounded-lg p-6">
-        <h2 className="text-xl font-semibold text-white">External Dependencies</h2>
-        <p className="mt-3 text-sm text-rose-300">
+      <CollapsibleWidget
+        id="external-dependencies"
+        title="External Dependencies"
+        defaultCollapsed={true}
+      >
+        <p className="text-sm text-rose-300">
           Dependency monitor data is unavailable right now.
         </p>
-      </section>
+      </CollapsibleWidget>
     );
   }
 
@@ -68,103 +75,109 @@ export default function ExternalDependencyPanel() {
     ["Maintenance", data.summary.maintenance],
   ] as const;
 
+  const headerActions = (
+    <div className="flex flex-wrap gap-2">
+      {summaryEntries.map(([label, count]) => (
+        <span
+          key={label}
+          className="rounded-full border border-stellar-border bg-stellar-card px-3 py-1 text-xs text-stellar-text-secondary"
+        >
+          {label}: <span className="text-white">{count}</span>
+        </span>
+      ))}
+    </div>
+  );
+
   return (
-    <section className="bg-stellar-card border border-stellar-border rounded-lg p-6 space-y-5">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-white">External Dependencies</h2>
-          <p className="mt-1 text-sm text-stellar-text-secondary">
-            Provider heartbeat, latency thresholds, and maintenance state across upstream services.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {summaryEntries.map(([label, count]) => (
-            <span
-              key={label}
-              className="rounded-full border border-stellar-border px-3 py-1 text-xs text-stellar-text-secondary"
+    <CollapsibleWidget
+      id="external-dependencies"
+      title="External Dependencies"
+      headerActions={headerActions}
+      defaultCollapsed={true}
+      className="rounded-lg border border-stellar-border bg-stellar-card p-6"
+    >
+      <div className="space-y-5">
+        <p className="text-sm text-stellar-text-secondary">
+          Provider heartbeat, latency thresholds, and maintenance state across upstream services.
+        </p>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {data.dependencies.map((dependency) => (
+            <article
+              key={dependency.providerKey}
+              className="rounded-lg border border-stellar-border bg-black/15 p-4 space-y-3"
             >
-              {label}: <span className="text-white">{count}</span>
-            </span>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">{dependency.displayName}</p>
+                  <p className="mt-1 text-xs text-stellar-text-secondary">
+                    {dependency.category} · {formatEndpoint(dependency.endpoint)}
+                  </p>
+                </div>
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium capitalize ${statusClasses(dependency.status)}`}>
+                  {dependency.status}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-md bg-stellar-border/30 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-stellar-text-secondary">
+                    Last Latency
+                  </p>
+                  <p className="mt-1 text-white">{formatLatency(dependency.lastLatencyMs)}</p>
+                </div>
+                <div className="rounded-md bg-stellar-border/30 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-stellar-text-secondary">
+                    Consecutive Failures
+                  </p>
+                  <p className="mt-1 text-white">{dependency.consecutiveFailures}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 text-xs text-stellar-text-secondary">
+                <span>Warn {dependency.latencyWarningMs} ms</span>
+                <span>Critical {dependency.latencyCriticalMs} ms</span>
+                <span>Alert after {dependency.failureThreshold} failures</span>
+              </div>
+
+              {dependency.history && dependency.history.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-stellar-text-secondary">
+                    <span>Recent Checks</span>
+                    <span>{dependency.lastCheckedAt ? new Date(dependency.lastCheckedAt).toLocaleTimeString() : "No data"}</span>
+                  </div>
+                  <div className="flex gap-1">
+                    {dependency.history
+                      .slice()
+                      .reverse()
+                      .map((check) => (
+                        <span
+                          key={check.id}
+                          className={`h-2 flex-1 rounded-full ${
+                            check.status === "healthy"
+                              ? "bg-emerald-400"
+                              : check.status === "maintenance"
+                              ? "bg-sky-400"
+                              : check.status === "degraded"
+                              ? "bg-amber-400"
+                              : "bg-rose-400"
+                          }`}
+                          title={`${check.status} · ${formatLatency(check.latencyMs)}`}
+                        />
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {(dependency.maintenanceNote || dependency.lastError) && (
+                <p className="text-xs text-stellar-text-secondary">
+                  {dependency.maintenanceNote ?? dependency.lastError}
+                </p>
+              )}
+            </article>
           ))}
         </div>
       </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {data.dependencies.map((dependency) => (
-          <article
-            key={dependency.providerKey}
-            className="rounded-lg border border-stellar-border bg-black/15 p-4 space-y-3"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-white">{dependency.displayName}</p>
-                <p className="mt-1 text-xs text-stellar-text-secondary">
-                  {dependency.category} · {formatEndpoint(dependency.endpoint)}
-                </p>
-              </div>
-              <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium capitalize ${statusClasses(dependency.status)}`}>
-                {dependency.status}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="rounded-md bg-stellar-border/30 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-stellar-text-secondary">
-                  Last Latency
-                </p>
-                <p className="mt-1 text-white">{formatLatency(dependency.lastLatencyMs)}</p>
-              </div>
-              <div className="rounded-md bg-stellar-border/30 px-3 py-2">
-                <p className="text-[11px] uppercase tracking-wide text-stellar-text-secondary">
-                  Consecutive Failures
-                </p>
-                <p className="mt-1 text-white">{dependency.consecutiveFailures}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2 text-xs text-stellar-text-secondary">
-              <span>Warn {dependency.latencyWarningMs} ms</span>
-              <span>Critical {dependency.latencyCriticalMs} ms</span>
-              <span>Alert after {dependency.failureThreshold} failures</span>
-            </div>
-
-            {dependency.history && dependency.history.length > 0 && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-stellar-text-secondary">
-                  <span>Recent Checks</span>
-                  <span>{dependency.lastCheckedAt ? new Date(dependency.lastCheckedAt).toLocaleTimeString() : "No data"}</span>
-                </div>
-                <div className="flex gap-1">
-                  {dependency.history
-                    .slice()
-                    .reverse()
-                    .map((check) => (
-                      <span
-                        key={check.id}
-                        className={`h-2 flex-1 rounded-full ${
-                          check.status === "healthy"
-                            ? "bg-emerald-400"
-                            : check.status === "maintenance"
-                            ? "bg-sky-400"
-                            : check.status === "degraded"
-                            ? "bg-amber-400"
-                            : "bg-rose-400"
-                        }`}
-                        title={`${check.status} · ${formatLatency(check.latencyMs)}`}
-                      />
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {(dependency.maintenanceNote || dependency.lastError) && (
-              <p className="text-xs text-stellar-text-secondary">
-                {dependency.maintenanceNote ?? dependency.lastError}
-              </p>
-            )}
-          </article>
-        ))}
-      </div>
-    </section>
+    </CollapsibleWidget>
   );
 }

@@ -7,6 +7,7 @@ import AddToWatchlistButton from "../watchlist/AddToWatchlistButton";
 import type { AssetWithHealth } from "../../types";
 import { useUserPreferencesStore } from "../../stores/userPreferencesStore";
 import { useFavorites } from "../../hooks/useFavorites";
+import { useUIStore } from "../../stores/uiStore";
 
 function chunkAssets<T>(items: T[], size: number): T[][] {
   const rows: T[][] = [];
@@ -54,6 +55,7 @@ export default function AssetDiscoverySection({
     toggleFavoriteAsset,
   } = useFavorites();
   const favoriteAssets = useUserPreferencesStore((s) => s.favoriteAssets);
+  const openInsightsTray = useUIStore((s) => s.openInsightsTray);
 
   const cols = useColumnCount();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -236,6 +238,14 @@ export default function AssetDiscoverySection({
                             </p>
                           ) : null}
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => openInsightsTray(asset.symbol)}
+                          className="w-full rounded-md border border-stellar-border px-3 py-2 text-xs font-medium text-stellar-text-secondary transition-colors hover:border-stellar-blue hover:text-white focus:outline-none focus:ring-2 focus:ring-stellar-blue"
+                          aria-label={`Open insights for ${asset.name ?? asset.symbol}`}
+                        >
+                          Insights
+                        </button>
                       </div>
                     ))}
                   </div>

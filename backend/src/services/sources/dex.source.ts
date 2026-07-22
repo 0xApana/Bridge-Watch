@@ -13,6 +13,7 @@
 import { redis } from "../../utils/redis.js";
 import { logger } from "../../utils/logger.js";
 import { withRetry } from "../../utils/retry.js";
+import { providerAllowlistService } from "../providerAllowlist.service.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -22,6 +23,10 @@ const SOURCE_NAME = "DEX";
 const CACHE_PREFIX = "dex:price:";
 const CACHE_TTL_SEC = 30;
 const TIMEOUT_MS = 6_000;
+
+const PROVIDER_STELLAR_HORIZON = "stellar-horizon";
+const PROVIDER_JUPITER = "jupiter";
+const PROVIDER_ONEINCH = "1inch";
 
 const STELLAR_HORIZON = "https://horizon.stellar.org";
 const JUPITER_PRICE_URL = "https://price.jup.ag/v6/price";
@@ -147,10 +152,32 @@ export class DexSource {
       logger.warn({ err }, "DEX cache read error");
     }
 
+    const [allowStellar, allowJupiter, allowOneInch] = await Promise.all([
+      providerAllowlistService.isAllowed(PROVIDER_STELLAR_HORIZON),
+      providerAllowlistService.isAllowed(PROVIDER_JUPITER),
+      providerAllowlistService.isAllowed(PROVIDER_ONEINCH),
+    ]);
+
+    if (!allowStellar) {
+      logger.info({ providerKey: PROVIDER_STELLAR_HORIZON }, "Provider disabled by allowlist");
+    }
+    if (!allowJupiter) {
+      logger.info({ providerKey: PROVIDER_JUPITER }, "Provider disabled by allowlist");
+    }
+    if (!allowOneInch) {
+      logger.info({ providerKey: PROVIDER_ONEINCH }, "Provider disabled by allowlist");
+    }
+
     const [stellarPrices, jupiterPrices, oneinchPrices] = await Promise.allSettled([
-      this.fetchStellarPrices(upper.filter((s) => s in STELLAR_ASSETS)),
-      this.fetchJupiterPrices(upper.filter((s) => s in JUPITER_MINTS)),
-      this.fetchOneInchPrices(upper.filter((s) => s in ONEINCH_CONTRACTS)),
+      allowStellar
+        ? this.fetchStellarPrices(upper.filter((s) => s in STELLAR_ASSETS))
+        : Promise.resolve([]),
+      allowJupiter
+        ? this.fetchJupiterPrices(upper.filter((s) => s in JUPITER_MINTS))
+        : Promise.resolve([]),
+      allowOneInch
+        ? this.fetchOneInchPrices(upper.filter((s) => s in ONEINCH_CONTRACTS))
+        : Promise.resolve([]),
     ]);
 
     const results: DexPriceResult[] = [
@@ -213,8 +240,7 @@ export class DexSource {
 
           if (!bid && !ask) return;
 
-          // Mid-price in XLM/asset; we approximate USD via a known XLM price
-          // For production: fetch XLM/USD separately. Here we use a placeholder.
+          // Mid-price in XLM/asset; convert to USD using live XLM/USD rate.
           const xlmUsd = await this.fetchXlmUsd();
           const midXlm = bid && ask ? (bid + ask) / 2 : bid || ask;
           const priceUsd = midXlm > 0 ? (1 / midXlm) * xlmUsd : 0;
@@ -236,34 +262,62 @@ export class DexSource {
     return results;
   }
 
-  /** Fetch XLM/USD price from Stellar DEX (XLM vs USDC) */
+  /** Fetch XLM/USD price — tries Stellar DEX order book first, then Binance, then a stale cache. */
   private async fetchXlmUsd(): Promise<number> {
     const cacheKey = "dex:xlm-usd";
     try {
       const cached = await redis.get(cacheKey);
       if (cached) return parseFloat(cached);
     } catch {
-      // ignore
+      // ignore cache errors
     }
 
+    // Primary: Stellar DEX XLM/USDC order book
     const usdc = STELLAR_ASSETS["USDC"];
-    const url = `${STELLAR_HORIZON}/order_book?selling_asset_type=native&buying_asset_type=credit_alphanum4&buying_asset_code=${usdc.code}&buying_asset_issuer=${usdc.issuer}&limit=1`;
+    const horizonUrl = `${STELLAR_HORIZON}/order_book?selling_asset_type=native&buying_asset_type=credit_alphanum4&buying_asset_code=${usdc.code}&buying_asset_issuer=${usdc.issuer}&limit=1`;
 
     try {
-      const book = await fetchJson<{ bids: { price: string }[]; asks: { price: string }[] }>(url);
+      const book = await fetchJson<{ bids: { price: string }[]; asks: { price: string }[] }>(horizonUrl);
       const bid = parseFloat(book.bids?.[0]?.price ?? "0");
       const ask = parseFloat(book.asks?.[0]?.price ?? "0");
       const mid = bid && ask ? (bid + ask) / 2 : bid || ask;
       if (mid > 0) {
         const xlmUsd = 1 / mid;
-        await redis.set(cacheKey, String(xlmUsd), "EX", 30).catch(() => undefined);
+        await Promise.all([
+          redis.set(cacheKey, String(xlmUsd), "EX", 30).catch(() => undefined),
+          redis.set(`${cacheKey}:stale`, String(xlmUsd), "EX", 3600).catch(() => undefined),
+        ]);
         return xlmUsd;
       }
     } catch {
-      // fallback
+      logger.warn("Stellar DEX XLM/USD fetch failed, falling back to Binance");
     }
 
-    return 0.12; // emergency fallback
+    // Secondary: Binance public ticker (no API key required)
+    try {
+      const binanceUrl = "https://api.binance.com/api/v3/ticker/price?symbol=XLMUSDT";
+      const ticker = await fetchJson<{ symbol: string; price: string }>(binanceUrl);
+      const price = parseFloat(ticker.price);
+      if (price > 0) {
+        await Promise.all([
+          redis.set(cacheKey, String(price), "EX", 30).catch(() => undefined),
+          redis.set(`${cacheKey}:stale`, String(price), "EX", 3600).catch(() => undefined),
+        ]);
+        return price;
+      }
+    } catch {
+      logger.warn("Binance XLM/USD fetch failed, using last known or emergency fallback");
+    }
+
+    // Last resort: stale cache without TTL check, then hardcoded fallback
+    try {
+      const stale = await redis.get(`${cacheKey}:stale`);
+      if (stale) return parseFloat(stale);
+    } catch {
+      // ignore
+    }
+
+    return 0.12; // emergency fallback — update if XLM price drifts significantly
   }
 
   // ---------------------------------------------------------------------------

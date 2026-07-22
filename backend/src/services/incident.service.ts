@@ -1,5 +1,6 @@
 import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
+import { enrichmentPipelineService } from "./enrichment/index.js";
 
 export type IncidentSeverity = "critical" | "high" | "medium" | "low";
 export type IncidentStatus = "open" | "investigating" | "resolved";
@@ -19,6 +20,10 @@ export interface BridgeIncident {
   sourceRepoAvatarUrl: string | null;
   sourceActor: string | null;
   sourceAttribution: Record<string, unknown>;
+  enrichmentMetadata: Record<string, unknown>;
+  enrichmentTags: string[];
+  derivedFields: Record<string, unknown>;
+  enrichmentValidation: Record<string, unknown>;
   requiresManualReview: boolean;
   ingestionAttemptCount: number;
   lastIngestionError: string | null;
@@ -52,8 +57,51 @@ export interface CreateIncidentPayload {
   sourceRepoAvatarUrl?: string;
   sourceActor?: string;
   sourceAttribution?: Record<string, unknown>;
+  enrichmentMetadata?: Record<string, unknown>;
+  enrichmentTags?: string[];
+  derivedFields?: Record<string, unknown>;
+  enrichmentValidation?: Record<string, unknown>;
   followUpActions?: string[];
   occurredAt?: string;
+}
+
+export interface HeatmapBucket {
+  date: string;
+  hour: number;
+  count: number;
+  bySeverity: Record<string, number>;
+  incidents: BridgeIncident[];
+}
+
+export interface HeatmapData {
+  buckets: HeatmapBucket[];
+  totalIncidents: number;
+  dateRange: { start: string; end: string };
+  assets: string[];
+}
+
+export type IncidentReplayEventType =
+  | "incident_created"
+  | "ingestion"
+  | "status_change"
+  | "enrichment"
+  | "resolution";
+
+export interface IncidentReplayEvent {
+  id: string;
+  timestamp: string;
+  eventType: IncidentReplayEventType;
+  title: string;
+  description: string;
+  severity?: IncidentSeverity;
+  metadata: Record<string, unknown>;
+}
+
+export interface IncidentReplayTimeline {
+  incidentId: string;
+  incident: BridgeIncident;
+  events: IncidentReplayEvent[];
+  durationMs: number;
 }
 
 export class IncidentService {
@@ -86,6 +134,32 @@ export class IncidentService {
   }
 
   async createIncident(payload: CreateIncidentPayload): Promise<BridgeIncident> {
+    const enrichment = await enrichmentPipelineService.enrich({
+      recordType: "incident",
+      provider: payload.sourceType ?? "manual",
+      data: {
+        sourceType: payload.sourceType ?? "manual",
+        sourceExternalId: payload.sourceExternalId ?? null,
+        bridgeId: payload.bridgeId,
+        assetCode: payload.assetCode ?? null,
+        severity: payload.severity,
+        title: payload.title,
+        description: payload.description,
+        sourceUrl: payload.sourceUrl ?? null,
+        occurredAt: payload.occurredAt ?? new Date().toISOString(),
+        followUpActions: payload.followUpActions ?? [],
+        requiresManualReview: false,
+      },
+      context: {
+        rawMetadata: payload.sourceAttribution ?? {},
+      },
+    });
+
+    const enrichmentMetadata = {
+      ...enrichment.metadata,
+      rawMetadata: payload.sourceAttribution ?? {},
+    };
+
     const [row] = await this.db("bridge_incidents")
       .insert({
         bridge_id: payload.bridgeId,
@@ -99,7 +173,23 @@ export class IncidentService {
         source_repository: payload.sourceRepository ?? null,
         source_repo_avatar_url: payload.sourceRepoAvatarUrl ?? null,
         source_actor: payload.sourceActor ?? null,
-        source_attribution: JSON.stringify(payload.sourceAttribution ?? {}),
+        source_attribution: JSON.stringify({
+          ...(payload.sourceAttribution ?? {}),
+          enrichment: {
+            metadata: enrichmentMetadata,
+            tags: enrichment.tags,
+            derivedFields: enrichment.derivedFields,
+            validation: enrichment.validation,
+            attempts: enrichment.attempts,
+          },
+        }),
+        enrichment_metadata: JSON.stringify(payload.enrichmentMetadata ?? enrichmentMetadata),
+        enrichment_tags: payload.enrichmentTags ?? enrichment.tags,
+        derived_fields: JSON.stringify(payload.derivedFields ?? enrichment.derivedFields),
+        enrichment_validation: JSON.stringify(payload.enrichmentValidation ?? {
+          ...enrichment.validation,
+          attempts: enrichment.attempts,
+        }),
         follow_up_actions: JSON.stringify(payload.followUpActions ?? []),
         occurred_at: payload.occurredAt ? new Date(payload.occurredAt) : new Date(),
       })
@@ -120,6 +210,16 @@ export class IncidentService {
     return this.mapRow(row);
   }
 
+  async updateIncidentSeverity(id: string, severity: IncidentSeverity): Promise<BridgeIncident | null> {
+    const [row] = await this.db("bridge_incidents")
+      .where("id", id)
+      .update({ severity, updated_at: new Date() })
+      .returning("*");
+    if (!row) return null;
+    logger.info({ incidentId: id, severity }, "Bridge incident severity updated");
+    return this.mapRow(row);
+  }
+
   async markRead(incidentId: string, userSession: string): Promise<void> {
     await this.db("bridge_incident_reads")
       .insert({ incident_id: incidentId, user_session: userSession })
@@ -135,6 +235,176 @@ export class IncidentService {
       .whereNull("r.id")
       .count<[{ count: string }]>("i.id as count");
     return Number(count);
+  }
+
+  async getHeatmapData(params: {
+    startDate?: string;
+    endDate?: string;
+    assetSymbol?: string;
+  }): Promise<HeatmapData> {
+    const now = new Date();
+    const defaultStart = new Date(now);
+    defaultStart.setDate(defaultStart.getDate() - 30);
+
+    const startDate = params.startDate ?? defaultStart.toISOString();
+    const endDate = params.endDate ?? now.toISOString();
+
+    const filters: IncidentFilters = {
+      assetCode: params.assetSymbol,
+      limit: 10000,
+    };
+
+    const { incidents } = await this.listIncidents(filters);
+
+    const filtered = incidents.filter((inc) => {
+      const occurred = new Date(inc.occurredAt);
+      if (params.startDate && occurred < new Date(params.startDate)) return false;
+      if (params.endDate && occurred > new Date(params.endDate)) return false;
+      return true;
+    });
+
+    const bucketMap = new Map<string, HeatmapBucket>();
+    const assets = new Set<string>();
+
+    for (const incident of filtered) {
+      const date = new Date(incident.occurredAt);
+      const dateKey = date.toISOString().split("T")[0]!;
+      const hour = date.getHours();
+      const key = `${dateKey}T${String(hour).padStart(2, "0")}`;
+
+      if (incident.assetCode) assets.add(incident.assetCode);
+
+      if (!bucketMap.has(key)) {
+        bucketMap.set(key, {
+          date: dateKey,
+          hour,
+          count: 0,
+          bySeverity: {},
+          incidents: [],
+        });
+      }
+
+      const bucket = bucketMap.get(key)!;
+      bucket.count++;
+      bucket.bySeverity[incident.severity] =
+        (bucket.bySeverity[incident.severity] ?? 0) + 1;
+      bucket.incidents.push(incident);
+    }
+
+    const buckets = Array.from(bucketMap.values()).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return a.hour - b.hour;
+    });
+
+    return {
+      buckets,
+      totalIncidents: filtered.length,
+      dateRange: { start: startDate, end: endDate },
+      assets: Array.from(assets).sort(),
+    };
+  }
+
+  async getIncidentReplayTimeline(id: string): Promise<IncidentReplayTimeline | null> {
+    const incident = await this.getIncident(id);
+    if (!incident) return null;
+
+    const ingestionRows = await this.db("bridge_incident_ingestion_history")
+      .where("incident_id", id)
+      .orderBy("created_at", "asc")
+      .select("*");
+
+    const events: IncidentReplayEvent[] = [];
+
+    events.push({
+      id: `${id}-created`,
+      timestamp: incident.occurredAt,
+      eventType: "incident_created",
+      title: "Incident detected",
+      description: incident.title,
+      severity: incident.severity,
+      metadata: {
+        bridgeId: incident.bridgeId,
+        assetCode: incident.assetCode,
+        sourceType: incident.sourceType,
+      },
+    });
+
+    for (const row of ingestionRows) {
+      const payload =
+        typeof row.payload === "object" && row.payload !== null
+          ? (row.payload as Record<string, unknown>)
+          : JSON.parse((row.payload as string) || "{}");
+
+      events.push({
+        id: row.id as string,
+        timestamp:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at),
+        eventType: "ingestion",
+        title: `Ingestion: ${row.event_type}`,
+        description: (row.error_message as string | null) ?? `Source ${row.source_type} event processed`,
+        metadata: {
+          sourceType: row.source_type,
+          sourceExternalId: row.source_external_id,
+          status: row.status,
+          attemptNumber: row.attempt_number,
+          payload,
+        },
+      });
+    }
+
+    if (incident.enrichmentTags.length > 0 || Object.keys(incident.enrichmentMetadata).length > 0) {
+      events.push({
+        id: `${id}-enrichment`,
+        timestamp: incident.updatedAt,
+        eventType: "enrichment",
+        title: "Enrichment applied",
+        description: `Tags: ${incident.enrichmentTags.join(", ") || "none"}`,
+        metadata: {
+          enrichmentMetadata: incident.enrichmentMetadata,
+          enrichmentTags: incident.enrichmentTags,
+          derivedFields: incident.derivedFields,
+        },
+      });
+    }
+
+    if (incident.status !== "open") {
+      events.push({
+        id: `${id}-status`,
+        timestamp: incident.updatedAt,
+        eventType: "status_change",
+        title: `Status changed to ${incident.status}`,
+        description: `Incident moved to ${incident.status} state`,
+        severity: incident.severity,
+        metadata: { status: incident.status },
+      });
+    }
+
+    if (incident.resolvedAt) {
+      events.push({
+        id: `${id}-resolved`,
+        timestamp: incident.resolvedAt,
+        eventType: "resolution",
+        title: "Incident resolved",
+        description: "Incident marked as resolved",
+        metadata: { resolvedAt: incident.resolvedAt },
+      });
+    }
+
+    events.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+    const startMs = new Date(events[0]?.timestamp ?? incident.occurredAt).getTime();
+    const endMs = new Date(
+      events[events.length - 1]?.timestamp ?? incident.updatedAt,
+    ).getTime();
+
+    return {
+      incidentId: id,
+      incident,
+      events,
+      durationMs: Math.max(0, endMs - startMs),
+    };
   }
 
   mapDatabaseRow(row: Record<string, unknown>): BridgeIncident {
@@ -159,6 +429,18 @@ export class IncidentService {
       sourceAttribution: typeof row.source_attribution === "object" && row.source_attribution !== null
         ? (row.source_attribution as Record<string, unknown>)
         : JSON.parse((row.source_attribution as string) || "{}"),
+      enrichmentMetadata: typeof row.enrichment_metadata === "object" && row.enrichment_metadata !== null
+        ? (row.enrichment_metadata as Record<string, unknown>)
+        : JSON.parse((row.enrichment_metadata as string) || "{}"),
+      enrichmentTags: Array.isArray(row.enrichment_tags)
+        ? (row.enrichment_tags as string[])
+        : [],
+      derivedFields: typeof row.derived_fields === "object" && row.derived_fields !== null
+        ? (row.derived_fields as Record<string, unknown>)
+        : JSON.parse((row.derived_fields as string) || "{}"),
+      enrichmentValidation: typeof row.enrichment_validation === "object" && row.enrichment_validation !== null
+        ? (row.enrichment_validation as Record<string, unknown>)
+        : JSON.parse((row.enrichment_validation as string) || "{}"),
       requiresManualReview: Boolean(row.requires_manual_review),
       ingestionAttemptCount: Number(row.ingestion_attempt_count ?? 0),
       lastIngestionError: (row.last_ingestion_error as string | null) ?? null,

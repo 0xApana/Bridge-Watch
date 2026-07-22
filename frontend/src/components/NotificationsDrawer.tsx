@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef } from "react";
 import {
   NOTIFICATION_PRIORITY_ORDER,
-  selectNotificationsGroupedByPriority,
   useNotificationStore,
   type Notification,
   type NotificationPriority,
@@ -56,12 +55,30 @@ export default function NotificationsDrawer({
   const liveRegionRef = useRef<HTMLParagraphElement | null>(null);
   const previousTopNotificationIdRef = useRef<string | null>(null);
 
-  const groupedNotifications = useNotificationStore(selectNotificationsGroupedByPriority);
+  const notifications = useNotificationStore((state) => state.notifications);
   const markAsRead = useNotificationStore((state) => state.markAsRead);
   const markAllAsRead = useNotificationStore((state) => state.markAllAsRead);
   const clearReadNotifications = useNotificationStore(
     (state) => state.clearReadNotifications
   );
+
+  const groupedNotifications = useMemo(() => {
+    const visibleNotifications = notifications.filter((n) => !n.dismissed);
+    return NOTIFICATION_PRIORITY_ORDER.reduce<Record<NotificationPriority, Notification[]>>(
+      (accumulator, priority) => {
+        accumulator[priority] = visibleNotifications.filter(
+          (notification) => notification.priority === priority
+        );
+        return accumulator;
+      },
+      {
+        critical: [],
+        high: [],
+        medium: [],
+        low: [],
+      }
+    );
+  }, [notifications]);
 
   const allNotifications = useMemo(
     () => NOTIFICATION_PRIORITY_ORDER.flatMap((priority) => groupedNotifications[priority]),

@@ -30,12 +30,11 @@ export default function WatchlistPage() {
     if (importParam) {
       try {
         const decoded = atob(importParam);
-        importWatchlists.mutate(decoded, {
-          onSuccess: () => {
-            alert("Shared watchlist imported successfully!");
-            setSearchParams({});
-          }
-        });
+        const success = importWatchlists(decoded);
+        if (success) {
+          alert("Shared watchlist imported successfully!");
+          setSearchParams({});
+        }
       } catch (err) {
         console.error("Failed to decode shared watchlist", err);
       }

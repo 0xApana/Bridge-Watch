@@ -70,4 +70,3 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export { useNotificationContext } from "./NotificationContextValue";

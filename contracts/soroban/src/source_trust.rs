@@ -50,7 +50,6 @@
 /// // Revoke a source
 /// contract.revoke_trusted_source(env, admin_address, source_address);
 /// ```
-
 use soroban_sdk::{contracttype, Address, Env, String, Vec};
 
 // ── Data Types ────────────────────────────────────────────────────────────────
@@ -142,7 +141,7 @@ pub fn register_trusted_source(
     name: String,
 ) {
     // Validate inputs
-    if name.len() == 0 {
+    if name.is_empty() {
         panic!("source name cannot be empty");
     }
 

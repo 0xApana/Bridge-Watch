@@ -1,24 +1,11 @@
 import {
-  createContext,
   useCallback,
-  useContext,
   useId,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
-
-export type ToastVariant = "error" | "success" | "info";
-
-type ToastItem = { id: string; message: string; variant: ToastVariant };
-
-type ToastContextValue = {
-  showToast: (opts: { message: string; variant?: ToastVariant }) => void;
-  showError: (message: string) => void;
-  showSuccess: (message: string) => void;
-};
-
-const ToastContext = createContext<ToastContextValue | null>(null);
+import { ToastContext, ToastVariant, ToastItem } from "./ToastContextValue";
 
 function ToastViewport({
   toasts,
@@ -113,8 +100,4 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error("useToast must be used within ToastProvider");
-  return ctx;
-}
+

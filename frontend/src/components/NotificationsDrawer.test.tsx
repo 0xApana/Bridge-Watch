@@ -1,5 +1,5 @@
 import { axe } from "vitest-axe";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, act } from "@testing-library/react";
 import NotificationsDrawer from "./NotificationsDrawer";
 import { useNotificationStore } from "../stores/notificationStore";
 
@@ -69,8 +69,8 @@ describe("NotificationsDrawer", () => {
     render(<NotificationsDrawer open drawerId="notifications-drawer" onClose={vi.fn()} />);
 
     const closeButton = screen.getByRole("button", { name: "Close notifications" });
-    const clearReadButton = screen.getByRole("button", { name: "Clear read" });
-    clearReadButton.focus();
+    const lastMarkAsReadButton = screen.getByRole("button", { name: "Mark Low issue as read" });
+    lastMarkAsReadButton.focus();
 
     fireEvent.keyDown(document, { key: "Tab" });
     expect(document.activeElement).toBe(closeButton);
@@ -131,13 +131,15 @@ describe("NotificationsDrawer", () => {
   it("renders new notifications while open and announces updates", () => {
     render(<NotificationsDrawer open drawerId="notifications-drawer" onClose={vi.fn()} />);
 
-    useNotificationStore.getState().addNotification({
-      id: "live-1",
-      type: "system",
-      priority: "high",
-      title: "Live event",
-      message: "Live body",
-      timestamp: 100,
+    act(() => {
+      useNotificationStore.getState().addNotification({
+        id: "live-1",
+        type: "system",
+        priority: "high",
+        title: "Live event",
+        message: "Live body",
+        timestamp: 100,
+      });
     });
 
     expect(screen.getByText("Live event")).toBeInTheDocument();

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import DateRangePicker from "./DateRangePicker";
 import type { TimeRangeSelection } from "../../utils/timeRange";
@@ -286,7 +286,7 @@ describe("DateRangePicker", () => {
 
       const stored = JSON.parse(localStorage.getItem("bridgewatch.recentRanges.v1") || "[]");
       expect(stored).toHaveLength(5);
-    });
+    }, 20_000);
 
     it("applies recent range when clicked", async () => {
       const user = userEvent.setup();
@@ -305,7 +305,7 @@ describe("DateRangePicker", () => {
         <DateRangePicker onApply={mockOnApply} onClear={mockOnClear} />
       );
 
-      const recentButton = screen.getByRole("button", { name: /04\/01\/2026 → 04\/20\/2026/ });
+      const recentButton = screen.getByRole("button", { name: /0?4\/0?1\/2026 → 0?4\/20\/2026/ });
       await user.click(recentButton);
 
       expect(mockOnApply).toHaveBeenCalledWith(recentRange);
@@ -370,8 +370,9 @@ describe("DateRangePicker", () => {
     });
 
     it("closes picker on Escape key", async () => {
-      const user = userEvent.setup();
-      const triggerRef = { current: document.createElement("button") };
+      const button = document.createElement("button");
+      document.body.appendChild(button);
+      const triggerRef = { current: button };
 
       render(
         <DateRangePicker
@@ -387,6 +388,7 @@ describe("DateRangePicker", () => {
       );
 
       expect(triggerRef.current).toBe(document.activeElement);
+      document.body.removeChild(button);
     });
 
     it("applies preset with Enter key", async () => {

@@ -38,6 +38,18 @@ export interface Bridge {
   mismatchPercentage: number;
 }
 
+export interface EvmLockDetail {
+  chain: "ethereum" | "polygon" | "base";
+  contractAddress: string;
+  tokenAddress: string;
+  assetSymbol: string;
+  lockedAmount: string;
+  isPaused: boolean;
+  blockNumber: number;
+  timestamp: number;
+  error: string | null;
+}
+
 export interface BridgeStats {
   name: string;
   volume24h: number;
@@ -46,6 +58,145 @@ export interface BridgeStats {
   totalTransactions: number;
   averageTransferTime: number;
   uptime30d: number;
+  /** Per-chain EVM lock contract balances, present for multi-chain (e.g. Wormhole) bridges. */
+  evmLockDetails?: EvmLockDetail[];
+}
+
+export type ReconciliationTriageStatus =
+  | "open"
+  | "investigating"
+  | "acknowledged"
+  | "resolved"
+  | "false_positive";
+
+export type DriftSeverity = "aligned" | "low" | "medium" | "high" | "critical";
+export type DriftTrendDirection = "new" | "improving" | "worsening" | "flat";
+export type ReconciliationRange = "24h" | "7d" | "30d" | "90d";
+export type ReconciliationStatus = "running" | "success" | "mismatch" | "failed";
+
+export interface ReconciliationSourceDatum {
+  id: "on-chain" | "reserve-attestation" | "reported-backing";
+  label: string;
+  source: string;
+  value: number | null;
+  unit: string;
+  observedAt: string | null;
+  status: string;
+  reference: string | null;
+  details: Record<string, string | number | boolean | null>;
+}
+
+export interface ReconciliationRun {
+  id: string;
+  assetCode: string;
+  bridgeName: string;
+  sourceChain: string | null;
+  status: ReconciliationStatus;
+  triageStatus: ReconciliationTriageStatus;
+  triageOwner: string | null;
+  triageNote: string | null;
+  triagedAt: string | null;
+  stellarSupply: number | null;
+  reportedSupply: number | null;
+  mismatchPercentage: number | null;
+  discrepancy: number | null;
+  discrepancyAbs: number | null;
+  severity: DriftSeverity;
+  startedAt: string;
+  finishedAt: string | null;
+  attempt: number;
+  jobId: string | null;
+  error: string | null;
+  sourceData: ReconciliationSourceDatum[];
+}
+
+export interface ReconciliationDriftSummary {
+  id: string;
+  assetCode: string;
+  bridgeName: string;
+  sourceChain: string | null;
+  latestRun: ReconciliationRun;
+  previousRunId: string | null;
+  severity: DriftSeverity;
+  trendDirection: DriftTrendDirection;
+  unresolved: boolean;
+  mismatchDelta: number | null;
+  runCount: number;
+  mismatchRunCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  history: Array<{
+    id: string;
+    startedAt: string;
+    mismatchPercentage: number | null;
+    status: ReconciliationStatus;
+    triageStatus: ReconciliationTriageStatus;
+  }>;
+}
+
+export interface ReconciliationDashboardResponse {
+  generatedAt: string;
+  filters: {
+    assetCode: string | null;
+    bridge: string | null;
+    range: ReconciliationRange;
+    startDate: string | null;
+    endDate: string | null;
+  };
+  totals: {
+    summaries: number;
+    unresolved: number;
+    critical: number;
+    mismatchRuns: number;
+  };
+  availableFilters: {
+    assets: string[];
+    bridges: string[];
+    ranges: ReconciliationRange[];
+  };
+  summaries: ReconciliationDriftSummary[];
+}
+
+export interface ReconciliationMismatchDetail {
+  generatedAt: string;
+  mismatch: ReconciliationRun;
+  history: ReconciliationRun[];
+  sourceData: ReconciliationSourceDatum[];
+  reserveCommitment: {
+    bridgeId: string;
+    sequence: number | null;
+    merkleRoot: string;
+    totalReserves: number | null;
+    status: string;
+    txHash: string | null;
+    committedAt: string | number;
+    committedLedger: number;
+    updatedAt: string | null;
+  } | null;
+}
+
+/**
+ * Bridge summary data combining status and performance metrics
+ * for display in summary card components
+ */
+export interface BridgeSummary {
+  id: string;
+  name: string;
+  status: "healthy" | "degraded" | "down" | "unknown";
+  /** Coverage metric: bridge uptime percentage (0-100) */
+  coverage: number;
+  /** Performance metric: average transfer time in milliseconds */
+  performance: number;
+  /** Total value locked in the bridge */
+  totalValueLocked: number;
+  /** Supply on Stellar */
+  supplyOnStellar: number;
+  /** Supply on source chain */
+  supplyOnSource: number;
+  /** Mismatch percentage between supplies */
+  mismatchPercentage: number;
+  /** Timestamp of last data update */
+  lastUpdated: string;
 }
 
 // Transaction History types
@@ -85,6 +236,33 @@ export interface TransactionPage {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export type ExportFormat = "csv" | "json";
+
+export type ExportDataType = "analytics" | "transactions" | "health_metrics";
+
+export type ExportStatus = "pending" | "processing" | "completed" | "failed";
+
+export interface ExportFilters {
+  startDate: string;
+  endDate: string;
+  assetCodes?: string[];
+  bridgeIds?: string[];
+}
+
+export interface ExportRecord {
+  id: string;
+  requested_by: string;
+  format: ExportFormat;
+  data_type: ExportDataType;
+  filters: ExportFilters;
+  status: ExportStatus;
+  download_url: string | null;
+  download_url_expires_at: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // WebSocket connection
@@ -186,6 +364,8 @@ export interface ApiKeyRecord {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  clientId?: string | null;
+  oauthEnabled?: boolean;
 }
 
 export interface CreateApiKeyRequest {
@@ -193,11 +373,14 @@ export interface CreateApiKeyRequest {
   scopes: string[];
   rateLimitPerMinute?: number;
   expiresInDays?: number;
+  enableOAuth?: boolean;
 }
 
 export interface CreateApiKeyResponse {
   apiKey: string;
   key: ApiKeyRecord;
+  clientId?: string;
+  clientSecret?: string;
 }
 
 /** Service dependency graph (`/metadata/dependencies`) */
@@ -279,3 +462,151 @@ export interface CreateAlertRoutingRuleRequest {
 }
 
 export type UpdateAlertRoutingRuleRequest = Partial<CreateAlertRoutingRuleRequest>;
+
+// Data Provenance Graph types
+export type ProvenanceNodeKind = "source" | "transform" | "destination";
+export type ProvenanceFreshness = "fresh" | "stale" | "unknown";
+
+export interface ProvenanceNode {
+  id: string;
+  label: string;
+  kind: ProvenanceNodeKind;
+  /** ISO timestamp of when this hop last produced data */
+  timestamp: string;
+  freshness: ProvenanceFreshness;
+  /** e.g. "asset", "bridge", "metric" */
+  entityType: string;
+  /** e.g. "USDC", "Allbridge", "price" */
+  entityId: string;
+  description: string;
+  /** Arbitrary key-value metadata about this node */
+  metadata: Record<string, string | number | boolean>;
+}
+
+export interface ProvenanceEdge {
+  from: string;
+  to: string;
+  /** e.g. "fetch", "aggregate", "normalize" */
+  transformKind: string;
+  latencyMs: number | null;
+}
+
+export interface ProvenanceGraph {
+  metric: string;
+  asset: string | null;
+  bridge: string | null;
+  generatedAt: string;
+  nodes: ProvenanceNode[];
+  edges: ProvenanceEdge[];
+}
+
+export interface ProvenanceListItem {
+  metric: string;
+  asset: string | null;
+  bridge: string | null;
+  lastUpdated: string;
+  nodeCount: number;
+}
+
+export interface AuditEvent {
+  id: string;
+  actorId: string;
+  actorType: "user" | "admin" | "system";
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  ipAddress?: string;
+  userAgent?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  checksum: string;
+  previousChecksum?: string;
+}
+
+export interface RiskHistoryPoint {
+  timestamp: string;
+  score: number;
+}
+
+export interface EthereumChainState {
+  blockNumber: number;
+  lockedAmount: string;
+  formattedAmount: string;
+  isPaused: boolean;
+  timestamp: number;
+}
+
+export interface StellarChainState {
+  supply: number;
+  assetCode: string;
+  issuer: string;
+}
+
+export type CrossChainVerificationStatus = "verified" | "mismatch" | "error" | "stale" | "pending";
+
+export interface CrossChainStateResult {
+  bridgeId: string;
+  bridgeName: string;
+  sourceChain: string;
+  verifiedAt: string;
+  ethereum: EthereumChainState | null;
+  stellar: StellarChainState;
+  merkleProofValid: boolean | null;
+  latestCommitmentSequence: number | null;
+  stateConsistent: boolean;
+  mismatchPct: number;
+  mismatchThreshold: number;
+  status: CrossChainVerificationStatus;
+  cacheHit: boolean;
+  freshnessSeconds: number;
+  error?: string;
+}
+
+export interface CrossChainVerificationSummary {
+  count: number;
+  verified: number;
+  mismatches: number;
+  errors: number;
+  results: CrossChainStateResult[];
+}
+
+export interface ServiceAnnotation {
+  id: string;
+  serviceName: string;
+  entityType: string;
+  entityId: string | null;
+  content: string;
+  author: string;
+  startTime: string | null;
+  endTime: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateServiceAnnotationInput {
+  serviceName: string;
+  entityType: string;
+  entityId?: string;
+  content: string;
+  author: string;
+  startTime?: string;
+  endTime?: string;
+}
+
+export interface UpdateServiceAnnotationInput {
+  actor: string;
+  content?: string;
+  active?: boolean;
+  startTime?: string | null;
+  endTime?: string | null;
+}
+
+export interface ServiceAnnotationAuditEntry {
+  id: string;
+  annotation_id: string;
+  action: string;
+  actor: string;
+  changes: string;
+  created_at: string;
+}

@@ -1,10 +1,13 @@
 import { randomUUID } from "crypto";
 
 const MAX_HISTORY_PER_TOPIC = 50;
+const MAX_HISTORY_AGE_MS = 5 * 60 * 1000;
 const BATCH_INTERVAL_MS = 120;
 const MAX_BATCH_SIZE = 20;
 const MESSAGE_RATE_LIMIT_WINDOW_MS = 1000;
 const MAX_MESSAGES_PER_WINDOW = 20;
+const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_TIMEOUT_MS = 10_000;
 
 export type WebsocketMessageType =
   | "price_update"
@@ -19,11 +22,13 @@ export type WebsocketMessagePriority = "critical" | "high" | "medium" | "low";
 
 export interface WebsocketBroadcastMessage {
   id: string;
+  sequence: number;
   type: WebsocketMessageType;
   topic: string;
   priority: WebsocketMessagePriority;
   payload: unknown;
   timestamp: string;
+  expiresAt: string;
   ackRequired: boolean;
 }
 
@@ -47,8 +52,19 @@ export interface WebsocketClientInfo {
   presence: "online" | "offline";
 }
 
+export interface WebsocketReplayMetrics {
+  totalStored: number;
+  totalExpired: number;
+  replayRequests: number;
+  replayMessagesDelivered: number;
+  sequenceHighWatermark: number;
+  topicSizes: Record<string, number>;
+}
+
 interface SocketConnection {
   send: (message: string) => void;
+  ping(data?: Buffer): void;
+  terminate(): void;
   on: (event: string, callback: (...args: unknown[]) => void) => void;
   readyState?: number;
 }
@@ -64,6 +80,7 @@ interface ClientState {
   pendingAcks: Map<string, number>;
   rateLimitWindowStart: number;
   rateLimitCount: number;
+  pendingPing: boolean;
 }
 
 interface QueuedMessage {
@@ -84,11 +101,19 @@ export class WebsocketService {
   private clients = new Map<string, ClientState>();
   private topicSubscribers = new Map<string, Set<string>>();
   private history = new Map<string, WebsocketBroadcastMessage[]>();
+  private sequenceCounter = 0;
+  private replayMetrics = {
+    totalExpired: 0,
+    replayRequests: 0,
+    replayMessagesDelivered: 0,
+  };
   private queue: QueuedMessage[] = [];
   private batchTimer: ReturnType<typeof setInterval>;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   private constructor() {
     this.batchTimer = setInterval(() => this.flushQueue(), BATCH_INTERVAL_MS);
+    this.startHeartbeat();
   }
 
   public static getInstance(): WebsocketService {
@@ -108,6 +133,8 @@ export class WebsocketService {
       existing.lastSeen = now;
       existing.rateLimitWindowStart = now;
       existing.rateLimitCount = 0;
+      existing.pendingPing = false;
+      this.registerSocketHandlers(existing, socket);
       this.sendSystem(socket, {
         message: "resumed",
         clientId: existing.id,
@@ -129,9 +156,12 @@ export class WebsocketService {
       pendingAcks: new Map(),
       rateLimitWindowStart: now,
       rateLimitCount: 0,
+      pendingPing: false,
     };
 
     this.clients.set(clientId, client);
+    this.registerSocketHandlers(client, socket);
+
     this.sendSystem(socket, {
       message: "connected",
       clientId,
@@ -144,9 +174,29 @@ export class WebsocketService {
   public removeClient(clientId: string): void {
     const client = this.clients.get(clientId);
     if (!client) return;
+    this.cleanupSubscriptions(client);
     client.presence = "offline";
     client.socket = undefined;
-    client.lastSeen = Date.now();
+    // Intentionally do NOT update lastSeen so the heartbeat sweep can
+    // detect and purge stale clients that silently disconnected.
+  }
+
+  private registerSocketHandlers(client: ClientState, socket: SocketConnection): void {
+    socket.on("pong", () => {
+      client.lastSeen = Date.now();
+      client.pendingPing = false;
+    });
+
+    socket.on("close", () => {
+      this.removeClient(client.id);
+    });
+  }
+
+  public touchClient(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (client) {
+      client.lastSeen = Date.now();
+    }
   }
 
   public subscribe(clientId: string, topic: string, filter: Record<string, unknown> = {}): void {
@@ -197,13 +247,18 @@ export class WebsocketService {
     payload: unknown,
     options: WebsocketPublishOptions = {},
   ): void {
+    const timestamp = options.timestamp ?? new Date().toISOString();
+    const createdAtMs = Date.parse(timestamp);
+    const expiresAtMs = (Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) + MAX_HISTORY_AGE_MS;
     const message: WebsocketBroadcastMessage = {
       id: randomUUID(),
+      sequence: ++this.sequenceCounter,
       type,
       topic,
       priority: options.priority ?? "medium",
       payload,
-      timestamp: options.timestamp ?? new Date().toISOString(),
+      timestamp,
+      expiresAt: new Date(expiresAtMs).toISOString(),
       ackRequired: options.ackRequired ?? false,
     };
 
@@ -239,6 +294,60 @@ export class WebsocketService {
       filters: Object.fromEntries(client.filters),
       presence: client.presence,
     }));
+  }
+
+  public getReplayMessages(
+    topics: string[] = [],
+    options: {
+      limit?: number;
+      sinceSequence?: number;
+    } = {}
+  ): WebsocketBroadcastMessage[] {
+    const replayTopics = topics.length > 0 ? topics : ["*"];
+    const limit = Math.min(Math.max(options.limit ?? MAX_BATCH_SIZE, 1), MAX_HISTORY_PER_TOPIC);
+    const sinceSequence = options.sinceSequence ?? 0;
+
+    const replayMessages: WebsocketBroadcastMessage[] = [];
+    for (const [topic, history] of this.history.entries()) {
+      this.pruneExpired(topic, history);
+      if (!replayTopics.some((subscription) => this.topicMatches(subscription, topic))) {
+        continue;
+      }
+
+      for (const message of this.history.get(topic) ?? []) {
+        if (message.sequence > sinceSequence) {
+          replayMessages.push(message);
+        }
+      }
+    }
+
+    replayMessages.sort((left, right) => left.sequence - right.sequence);
+    this.replayMetrics.replayRequests += 1;
+
+    const sliced = replayMessages.slice(-limit);
+    this.replayMetrics.replayMessagesDelivered += sliced.length;
+    return sliced;
+  }
+
+  public getReplayMetrics(): WebsocketReplayMetrics {
+    const topicSizes: Record<string, number> = {};
+    let totalStored = 0;
+
+    for (const [topic, history] of this.history.entries()) {
+      this.pruneExpired(topic, history);
+      const size = this.history.get(topic)?.length ?? 0;
+      topicSizes[topic] = size;
+      totalStored += size;
+    }
+
+    return {
+      totalStored,
+      totalExpired: this.replayMetrics.totalExpired,
+      replayRequests: this.replayMetrics.replayRequests,
+      replayMessagesDelivered: this.replayMetrics.replayMessagesDelivered,
+      sequenceHighWatermark: this.sequenceCounter,
+      topicSizes,
+    };
   }
 
   private enqueue(message: WebsocketBroadcastMessage): void {
@@ -366,6 +475,7 @@ export class WebsocketService {
   private recordHistory(message: WebsocketBroadcastMessage): void {
     const history = this.history.get(message.topic) ?? [];
     history.push(message);
+    this.pruneExpired(message.topic, history);
     while (history.length > MAX_HISTORY_PER_TOPIC) {
       history.shift();
     }
@@ -377,13 +487,7 @@ export class WebsocketService {
     if (!client || client.presence !== "online" || !client.socket) return;
 
     const replayTopics = topics.length > 0 ? topics : Array.from(client.subscriptions);
-    const replayMessages: WebsocketBroadcastMessage[] = [];
-
-    for (const [topic, history] of this.history.entries()) {
-      if (replayTopics.some((subscription) => this.topicMatches(subscription, topic))) {
-        replayMessages.push(...history);
-      }
-    }
+    const replayMessages = this.getReplayMessages(replayTopics, { limit: MAX_BATCH_SIZE });
 
     if (replayMessages.length === 0) {
       return;
@@ -393,6 +497,70 @@ export class WebsocketService {
       type: "replay",
       messages: replayMessages.slice(-MAX_BATCH_SIZE),
     });
+  }
+
+  private pruneExpired(topic: string, history: WebsocketBroadcastMessage[]): void {
+    const now = Date.now();
+    const kept = history.filter((message) => Date.parse(message.expiresAt) > now);
+    const removed = history.length - kept.length;
+    if (removed > 0) {
+      this.replayMetrics.totalExpired += removed;
+    }
+
+    if (kept.length > 0) {
+      this.history.set(topic, kept);
+      return;
+    }
+
+    this.history.delete(topic);
+  }
+
+  private cleanupSubscriptions(client: ClientState): void {
+    for (const topic of client.subscriptions) {
+      const subscribers = this.topicSubscribers.get(topic);
+      subscribers?.delete(client.id);
+      if (subscribers && subscribers.size === 0) {
+        this.topicSubscribers.delete(topic);
+      }
+    }
+    client.subscriptions.clear();
+    client.filters.clear();
+  }
+
+  private startHeartbeat(): void {
+    this.heartbeatTimer = setInterval(() => {
+      const now = Date.now();
+
+      for (const [clientId, client] of this.clients) {
+        if (client.pendingPing) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[WebsocketService] Client ${clientId} missed pong – terminating connection`,
+          );
+          client.socket?.terminate();
+          this.cleanupSubscriptions(client);
+          this.clients.delete(clientId);
+          continue;
+        }
+
+        const cutoffMs = now - (HEARTBEAT_INTERVAL_MS + HEARTBEAT_TIMEOUT_MS);
+        if (client.lastSeen < cutoffMs) {
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[WebsocketService] Client ${clientId} heartbeat timeout – terminating connection`,
+          );
+          client.socket?.terminate();
+          this.cleanupSubscriptions(client);
+          this.clients.delete(clientId);
+          continue;
+        }
+
+        if (client.socket && client.presence === "online") {
+          client.pendingPing = true;
+          client.socket.ping();
+        }
+      }
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
   private sendMessage(connection: SocketConnection, payload: unknown): void {
@@ -405,5 +573,15 @@ export class WebsocketService {
 
   private sendSystem(connection: SocketConnection, payload: Record<string, unknown>): void {
     this.sendMessage(connection, { type: "system", ...payload });
+  }
+
+  public shutdown(): void {
+    if (this.heartbeatTimer !== null) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+    if (this.batchTimer) {
+      clearInterval(this.batchTimer);
+    }
   }
 }

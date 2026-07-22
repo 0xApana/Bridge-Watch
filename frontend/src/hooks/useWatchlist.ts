@@ -79,6 +79,7 @@ interface WatchlistContextValue {
   addAsset: (symbol: string, listId?: string) => void;
   removeAsset: (symbol: string, listId?: string) => void;
   reorderAsset: (symbol: string, direction: "up" | "down", listId?: string) => void;
+  updateAssetOrder: (watchlistId: string, assets: string[]) => void;
   createWatchlist: (name: string) => void;
   deleteWatchlist: (listId: string) => void;
   renameWatchlist: (listId: string, name: string) => void;
@@ -197,6 +198,18 @@ function useWatchlistState(): WatchlistContextValue {
           }),
         };
       });
+    },
+    [updateStore]
+  );
+
+  const updateAssetOrder = useCallback(
+    (watchlistId: string, assets: string[]) => {
+      updateStore((previous) => ({
+        ...previous,
+        lists: previous.lists.map((list) =>
+          list.id === watchlistId ? { ...list, assets } : list
+        ),
+      }));
     },
     [updateStore]
   );
@@ -332,6 +345,7 @@ function useWatchlistState(): WatchlistContextValue {
     addAsset,
     removeAsset,
     reorderAsset,
+    updateAssetOrder,
     createWatchlist,
     deleteWatchlist,
     renameWatchlist,

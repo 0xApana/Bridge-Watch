@@ -53,6 +53,32 @@ To become the standard monitoring infrastructure for bridged assets on Stellar, 
 
 Continuous tracking of bridged asset supplies across chains with automated verification against official reserve data. This includes monitoring mint and burn events, detecting supply mismatches, and maintaining historical records of bridge performance and uptime.
 
+### On-Chain Bridge Status Aggregation (Soroban)
+
+The Soroban contract maintains **pre-aggregated rollups** for fast reads (no scanning across all assets/bridges at query time). Rollups are normalized into severity tiers:
+
+`StatusTier`: `Ok` | `Low` | `Medium` | `High`
+
+Stored rollup views:
+
+- **Per-asset**: `AssetStatusRollup` (health score + price deviation alerts + paused/active flags)
+- **Per-bridge**: `BridgeStatusRollup` (latest supply mismatch severity)
+- **Contract-level**: `ContractStatusRollup` (counts by tier across assets and bridges, plus an overall tier)
+
+Read functions (Soroban):
+
+- `get_asset_status_rollup(asset_code)`
+- `get_bridge_status_rollup(bridge_id)`
+- `get_contract_status_rollup()`
+
+Rollups are updated deterministically when new signals are submitted (for example, `submit_health`, `check_price_deviation`, and `record_supply_mismatch`).
+
+Events:
+
+- `asset_st` — asset tier updated
+- `bridge_st` — bridge tier updated
+- `ctr_st` — contract-level tier updated
+
 ### Liquidity Analytics
 
 Aggregated liquidity depth across StellarX AMM, Phoenix DEX, LumenSwap, SDEX, and Soroswap. The platform provides real-time total value locked per asset pair, best route suggestions for optimal trade execution, and volume-weighted average pricing across all venues.
@@ -225,10 +251,15 @@ WS   /api/v1/ws                        # WebSocket for real-time updates
 
 ## Feature Documentation
 
+- Build cache matrix: [docs/build-cache-matrix.md](docs/build-cache-matrix.md)
+- Support handbook: [docs/support-handbook.md](docs/support-handbook.md)
+- Migration notes template: [docs/migration-notes-template.md](docs/migration-notes-template.md)
+- API authentication guide: [docs/api-authentication-guide.md](docs/api-authentication-guide.md)
 - Time range selector API: [docs/time-range-selector-api.md](docs/time-range-selector-api.md)
 - Watchlist feature: [docs/watchlist-feature.md](docs/watchlist-feature.md)
 - Visualization color system: [docs/data-visualization-color-system.md](docs/data-visualization-color-system.md)
 - Contract integration SDK: [sdk/README.md](sdk/README.md)
+- Export picker flow: [docs/user-guide/export-picker-flow.md](docs/user-guide/export-picker-flow.md)
 
 
 ## Roadmap

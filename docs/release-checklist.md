@@ -4,6 +4,9 @@ Use this checklist for every production deployment so readiness, verification, r
 
 ## Release Gates
 
+- Confirm the automated `Release Shield` job reports **PROMOTION APPROVED** before creating or promoting a release.
+- Configure `RELEASE_HEALTH_URLS` with comma-separated readiness endpoints (for example, production and critical dependency readiness URLs).
+- Confirm `RELEASE_REQUIRED_WORKFLOWS` matches the workflow names that protect the release commit; the default is `CI,Code Quality,Security Scanning`.
 - Confirm the release owner, reviewer, and on-call engineer are assigned before work starts.
 - Confirm the deployment window, target environment, and rollback owner are documented in the release ticket.
 - Confirm the PR references all closing issues and includes the release notes summary.
@@ -14,6 +17,7 @@ Use this checklist for every production deployment so readiness, verification, r
 - Verify `main` is green in CI and the release branch is rebased or merged cleanly.
 - Confirm database migrations have been reviewed for backward compatibility and rollback impact.
 - Confirm environment variables, secrets, API keys, and feature flags are present in the target environment.
+- Complete the [secrets audit checklist](./secrets-audit-checklist.md) when rotating or adding secrets for this release.
 - Confirm dashboards and alerts used during rollout are available:
   - [docs/deployment/monitoring-setup.md](/Users/ab/stellardrips/Bridge-Watch/docs/deployment/monitoring-setup.md)
   - [monitoring/runbooks/critical-alerts.md](/Users/ab/stellardrips/Bridge-Watch/monitoring/runbooks/critical-alerts.md)
@@ -27,8 +31,21 @@ Use this checklist for every production deployment so readiness, verification, r
 - Record backend image tag, frontend build identifier, contract artifact version, and migration batch number.
 - Store the final deployment metadata in the release ticket or deployment log.
 
+## Emergency Override
+
+Use the release shield override only for an incident or time-critical recovery where the failed gate is understood and separately mitigated.
+
+1. Dispatch the `Release` workflow manually.
+2. Enable `override_release_shield`.
+3. Enter an audit reason of at least 10 characters, including the incident or change reference.
+4. Confirm the operator has repository `maintain` or `admin` permission.
+5. Copy the shield report and override reason into the release ticket.
+
+Tag-triggered releases cannot bypass the shield. An unauthorized or unexplained override remains blocked.
+
 ## Data Migration Checks
 
+- Create migration notes for the release using [migration-notes-template.md](./migration-notes-template.md) and link the completed notes in the release ticket.
 - Review pending migrations and identify:
   - schema changes
   - backfills

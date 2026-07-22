@@ -24,8 +24,13 @@
 - Subject Matter Experts: Own subsystem analysis and remediation.
 
 ## 4. Communication Templates
+
+Short-form examples:
+
 ### Initial Internal Message
 `[INCIDENT OPEN] <service/component> - <short impact>. Severity: <SEV>. IC: <name>. Next update in 15 minutes.`
+
+Full copy-paste templates (triage, updates, status page, postmortem): **[runbooks/incident-response-templates.md](runbooks/incident-response-templates.md)**.
 
 ### Customer-Facing Status Page
 `We are investigating elevated errors in <component>. Impact: <who/what>. Mitigation is in progress. Next update by <time UTC>.`

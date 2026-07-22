@@ -1,7 +1,9 @@
-import React, { ReactElement } from "react";
+/* eslint-disable react-refresh/only-export-components */
+import React, { ReactElement, Suspense } from "react";
 import { render, RenderOptions } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
+import "../i18n/config";
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -20,7 +22,9 @@ const AllTheProviders = ({ children }: AllTheProvidersProps) => {
   const queryClient = createTestQueryClient();
   return (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>{children}</MemoryRouter>
+      <MemoryRouter>
+        <Suspense fallback={null}>{children}</Suspense>
+      </MemoryRouter>
     </QueryClientProvider>
   );
 };

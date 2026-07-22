@@ -1,4 +1,3 @@
-import React from "react";
 import type { BridgeAnalytics } from "../../hooks/useAnalytics";
 
 interface SnapshotCardProps {
@@ -16,7 +15,7 @@ function formatCurrency(v: number) {
 
 export default function SnapshotCard({ title, bridges, timestamp }: SnapshotCardProps) {
   const totalTVL = bridges.reduce((acc, b) => acc + b.tvl, 0);
-  const avgHealth = bridges.reduce((acc, b) => acc + b.healthScore, 0) / bridges.length;
+  const avgHealth = bridges.reduce((acc, b) => acc + (b.uptime30d ?? 0), 0) / bridges.length;
 
   return (
     <div className="bg-stellar-card border border-stellar-border rounded-xl p-6 shadow-lg print:shadow-none print:border-gray-300">

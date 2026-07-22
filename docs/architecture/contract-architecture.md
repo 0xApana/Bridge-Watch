@@ -34,8 +34,11 @@ contracts/soroban/src/
 ├── multisig_treasury.rs        # Multi-signature treasury
 ├── rate_limiter.rs             # On-chain rate limiting
 ├── reputation_system.rs        # Bridge operator reputation tracking
+├── state_export.rs             # Compact contract data snapshots (issue #453)
 └── relay/                      # Relay contract directory
 ```
+
+See [contract-data-snapshot-format.md](../contract-data-snapshot-format.md) for the export schema.
 
 ### Key Data Structures
 

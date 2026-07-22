@@ -7,7 +7,7 @@ import {
   PriceImpactCalculator,
   PairSelector,
 } from "../components/liquidity";
-import type { TradingPair } from "../types/liquidity";
+import type { TradingPair, VenueLiquidity } from "../types/liquidity";
 
 export default function LiquidityDashboard() {
   const [pair, setPair] = useLocalStorageState<TradingPair>(
@@ -18,7 +18,7 @@ export default function LiquidityDashboard() {
   const { depth, venues, history, isLoading, error, lastUpdated } =
     useLiquidity(pair);
 
-  const totalLiquidity = venues.reduce((s, v) => s + v.totalLiquidity, 0);
+  const totalLiquidity = venues.reduce((s: number, v: VenueLiquidity) => s + v.totalLiquidity, 0);
 
   return (
     <div className="space-y-6">
@@ -112,7 +112,7 @@ export default function LiquidityDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {venues.map((v) => (
+                {venues.map((v: VenueLiquidity) => (
                   <tr key={v.venue} className="border-b border-stellar-border/50">
                     <td className="py-2 text-white">{v.venue}</td>
                     <td className="py-2 text-right text-stellar-text-secondary">

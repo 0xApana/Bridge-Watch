@@ -116,21 +116,10 @@ export default function DateRangePicker({
   const containerRef = useRef<HTMLDivElement>(null);
   const startInputRef = useRef<HTMLInputElement>(null);
   const endInputRef = useRef<HTMLInputElement>(null);
-  const focusableElementsRef = useRef<HTMLElement[]>([]);
 
   // Validation
   const isInvalid = Boolean(start && end && new Date(start) > new Date(end));
   const canApply = Boolean(start && end && !isInvalid);
-
-  // Update focusable elements list
-  useEffect(() => {
-    if (!containerRef.current) return;
-
-    const focusable = containerRef.current.querySelectorAll<HTMLElement>(
-      "button, input, [tabindex]:not([tabindex='-1'])"
-    );
-    focusableElementsRef.current = Array.from(focusable);
-  }, [recentRanges]); // Update when recent ranges change
 
   // Sync initial values
   useEffect(() => {
@@ -140,9 +129,7 @@ export default function DateRangePicker({
 
   // Handle keyboard navigation and focus trap
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    const focusable = focusableElementsRef.current;
     const activeElement = document.activeElement as HTMLElement;
-    const currentIndex = focusable.indexOf(activeElement);
 
     if (event.key === "Escape") {
       // Close without applying changes
@@ -154,7 +141,21 @@ export default function DateRangePicker({
     }
 
     if (event.key === "Tab") {
+      const focusable = Array.from(
+        containerRef.current?.querySelectorAll<HTMLElement>(
+          "button, input, [tabindex]:not([tabindex='-1'])"
+        ) ?? []
+      ).filter(
+        (element) =>
+          !element.hasAttribute("disabled") && (element as HTMLButtonElement).disabled !== true
+      );
+
+      if (!focusable.length) {
+        return;
+      }
+
       event.preventDefault();
+      const currentIndex = focusable.indexOf(activeElement);
 
       if (event.shiftKey) {
         // Shift+Tab: move to previous element
@@ -162,7 +163,7 @@ export default function DateRangePicker({
         focusable[nextIndex]?.focus();
       } else {
         // Tab: move to next element
-        const nextIndex = currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+        const nextIndex = currentIndex >= focusable.length - 1 || currentIndex === -1 ? 0 : currentIndex + 1;
         focusable[nextIndex]?.focus();
       }
     }
@@ -283,8 +284,8 @@ export default function DateRangePicker({
           <p className="text-xs font-medium text-stellar-text-secondary">Recent</p>
           <div className="flex flex-wrap gap-2">
             {recentRanges.map((range, index) => {
-              const startDate = new Date(range.start);
-              const endDate = new Date(range.end);
+              const startDate = new Date(range.start ?? "");
+              const endDate = new Date(range.end ?? "");
               const label = `${startDate.toLocaleDateString()} → ${endDate.toLocaleDateString()}`;
 
               return (

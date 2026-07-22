@@ -1,15 +1,15 @@
-import BridgeIncidentFeed from "../components/BridgeIncidentFeed";
+import IncidentHeatmap from "../components/IncidentHeatmap";
 
 export default function Incidents() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-stellar-text-primary">Incident Feed</h1>
+        <h1 className="text-3xl font-bold text-stellar-text-primary">Incident Heatmap</h1>
         <p className="mt-2 text-stellar-text-secondary">
-          Real-time bridge incident tracking — severity, follow-up actions, and source references.
+          Visual overview of incident clustering across assets and time.
         </p>
       </div>
-      <BridgeIncidentFeed />
+      <IncidentHeatmap />
     </div>
   );
 }

@@ -7,7 +7,7 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import type { FilterFn, Row, RowData } from "@tanstack/react-table";
-import { ColumnToggle } from "./ColumnToggle";
+import { ColumnChooser } from "./ColumnToggle";
 import { TableBody } from "./TableBody";
 import { TableExport } from "./TableExport";
 import { TableHeader } from "./TableHeader";
@@ -121,6 +121,7 @@ export function DataTable<TData extends RowData>({
     setColumnVisibility,
     setRowSelection,
     setColumnOrder,
+    resetColumnPreferences,
   } = useDataTable<TData>({
     columns,
     defaultPageSize: pageSizeOptions?.[0] ?? 10,
@@ -306,7 +307,7 @@ export function DataTable<TData extends RowData>({
         </div>
 
         <div className="flex flex-col gap-3">
-          <ColumnToggle table={table} />
+          <ColumnChooser table={table} onReset={resetColumnPreferences} />
           <TablePagination table={table} pageSizeOptions={pageSizeOptions} />
         </div>
       </div>
