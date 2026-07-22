@@ -24,7 +24,11 @@
     "test:e2e:report": "playwright show-report",
     "lint": "npm run lint --workspaces --if-present",
     "setup": "bash scripts/setup.sh",
-    "setup:quick": "bash scripts/setup.sh --skip-contracts --skip-ide -y"
+    "setup:quick": "bash scripts/setup.sh --skip-contracts --skip-ide -y",
+    "sandbox:start": "bash scripts/sandbox-start.sh",
+    "sandbox:stop": "bash scripts/sandbox-stop.sh",
+    "sandbox:reset": "bash scripts/sandbox-reset.sh",
+    "sandbox:logs": "bash scripts/sandbox-logs.sh"
   },
   "engines": {
     "node": ">=20.0.0"
