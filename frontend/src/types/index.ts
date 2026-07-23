@@ -168,6 +168,7 @@ export interface ReconciliationMismatchDetail {
     merkleRoot: string;
     totalReserves: number | null;
     status: string;
+    verificationStatus: CommitmentVerificationStatus;
     txHash: string | null;
     committedAt: string | number;
     committedLedger: number;
@@ -544,6 +545,8 @@ export interface StellarChainState {
 
 export type CrossChainVerificationStatus = "verified" | "mismatch" | "error" | "stale" | "pending";
 
+export type CommitmentVerificationStatus = "verified" | "challenged" | "pending" | "invalid" | "unknown";
+
 export interface CrossChainStateResult {
   bridgeId: string;
   bridgeName: string;
@@ -552,6 +555,9 @@ export interface CrossChainStateResult {
   ethereum: EthereumChainState | null;
   stellar: StellarChainState;
   merkleProofValid: boolean | null;
+  proofDepth: number | null;
+  proofLeafHash: string | null;
+  leafCount: number | null;
   latestCommitmentSequence: number | null;
   stateConsistent: boolean;
   mismatchPct: number;
