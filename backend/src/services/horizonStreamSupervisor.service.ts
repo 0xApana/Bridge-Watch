@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { logger } from "../utils/logger.js";
 import { getMetricsService } from "./metrics.service.js";
+import { ingestionQueueManager } from "./ingestionQueueManager.service.js";
 
 export type StreamStatus = "connecting" | "connected" | "reconnecting" | "closed" | "error";
 
@@ -204,12 +205,81 @@ export class HorizonStreamSupervisor extends EventEmitter {
           this.lastCursor = event.id;
         }
 
-        this.emit("event", event);
-        this._recordEventMetric();
+    this.emit("event", event);
+    this._recordEventMetric();
+
+    void this._handleEventForReorg(event);
       } catch {
         // Non-JSON line, skip
       }
     }
+  }
+
+  private _lastKnownLedger: number | null = null;
+  private _cursorHistory: Array<{ cursor: string; ledger: number; timestamp: number }> = [];
+  private _reorgDetected = false;
+
+  private async _handleEventForReorg(event: Record<string, unknown>): Promise<void> {
+    const ledgerStr = event.ledger as string | undefined;
+    if (!ledgerStr) return;
+
+    const ledger = parseInt(ledgerStr, 10);
+    if (isNaN(ledger)) return;
+
+    this._cursorHistory.push({
+      cursor: this.lastCursor ?? "",
+      ledger,
+      timestamp: Date.now(),
+    });
+
+    if (this._cursorHistory.length > 200) {
+      this._cursorHistory.shift();
+    }
+
+    if (this._lastKnownLedger !== null && ledger < this._lastKnownLedger) {
+      const rollbackAmount = this._lastKnownLedger - ledger;
+      if (rollbackAmount > 0) {
+        logger.warn(
+          {
+            streamId: this.streamId,
+            lastLedger: this._lastKnownLedger,
+            newLedger: ledger,
+            rollbackAmount,
+          },
+          "Potential ledger re-org detected in stream"
+        );
+
+        this._reorgDetected = true;
+
+        try {
+          const rolledBack = await ingestionQueueManager.detectReorgAndRollback();
+          if (rolledBack.length > 0) {
+            logger.warn(
+              { streamId: this.streamId, rolledBackCount: rolledBack.length },
+              "Re-org rollback applied to buffered events"
+            );
+          }
+        } catch (err) {
+          logger.error(
+            { streamId: this.streamId, err },
+            "Failed to handle re-org rollback"
+          );
+        }
+      }
+    }
+
+    this._lastKnownLedger = ledger;
+  }
+
+  public getReorgStatus(): { reorgDetected: boolean; ledgerRollbacks: number } {
+    const rollbacks = this._cursorHistory.filter((_, i) => {
+      if (i === 0) return false;
+      return this._cursorHistory[i].ledger < this._cursorHistory[i - 1].ledger;
+    });
+    return {
+      reorgDetected: this._reorgDetected,
+      ledgerRollbacks: rollbacks.length,
+    };
   }
 
   private _scheduleReconnect(): void {
