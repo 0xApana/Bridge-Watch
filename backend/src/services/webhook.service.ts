@@ -3,6 +3,8 @@ import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 import { Queue, Job, ConnectionOptions } from "bullmq";
 import { config } from "../config/index.js";
+import { WebhookBatchBufferService } from "./webhookBatchBuffer.service.js";
+import type { BatchBufferStatus } from "./webhookBatchBuffer.service.js";
 
 const fetch = globalThis.fetch;
 
@@ -22,7 +24,7 @@ export type WebhookEventType =
   | "price.deviation_detected"
   | "liquidity.threshold_breached";
 
-export type WebhookDeliveryStatus = "pending" | "success" | "failed" | "retrying";
+export type WebhookDeliveryStatus = "pending" | "buffered" | "success" | "failed" | "retrying";
 
 export interface WebhookEndpoint {
   id: string;
@@ -108,8 +110,27 @@ export class WebhookService {
   private static instance: WebhookService;
   private deliveryQueue: Queue;
   private rateLimitMap: Map<string, RateLimitEntry> = new Map();
+  public readonly batchBuffer: WebhookBatchBufferService;
 
   private constructor() {
+    this.batchBuffer = new WebhookBatchBufferService(async (params) => {
+      try {
+        await this.queueBatchDelivery({
+          webhookEndpointId: params.endpointId,
+          eventType: params.eventType,
+          events: params.events as Array<Record<string, any>>,
+        });
+        await this.resolveBufferedDeliveries(params.deliveryIds, "success");
+      } catch (err) {
+        await this.resolveBufferedDeliveries(
+          params.deliveryIds,
+          "failed",
+          err instanceof Error ? err.message : String(err),
+        );
+        throw err;
+      }
+    });
+
     this.deliveryQueue = new Queue(WEBHOOK_QUEUE_NAME, {
       connection: WEBHOOK_CONNECTION,
       defaultJobOptions: {
@@ -424,7 +445,6 @@ export class WebhookService {
   }): Promise<WebhookDelivery> {
     const db = getDatabase();
 
-    // Check rate limit
     const endpoint = await this.getEndpoint(params.webhookEndpointId);
     if (!endpoint) {
       throw new Error(`Webhook endpoint not found: ${params.webhookEndpointId}`);
@@ -434,7 +454,37 @@ export class WebhookService {
       throw new Error(`Rate limit exceeded for webhook endpoint: ${params.webhookEndpointId}`);
     }
 
-    // Create delivery record
+    // Route through batch buffer when enabled — the buffer auto-flushes after batchWindowMs
+    if (endpoint.isBatchDeliveryEnabled) {
+      const [delivery] = await db("webhook_deliveries")
+        .insert({
+          id: crypto.randomUUID(),
+          webhook_endpoint_id: params.webhookEndpointId,
+          event_type: params.eventType,
+          payload: JSON.stringify(params.payload),
+          status: "buffered",
+          attempts: 0,
+          created_at: new Date(),
+        })
+        .returning("*");
+
+      this.batchBuffer.buffer({
+        endpointId: params.webhookEndpointId,
+        deliveryId: delivery.id,
+        eventType: params.eventType,
+        payload: params.payload,
+        windowMs: endpoint.batchWindowMs,
+      });
+
+      logger.info(
+        { deliveryId: delivery.id, webhookEndpointId: params.webhookEndpointId, eventType: params.eventType, windowMs: endpoint.batchWindowMs },
+        "Event buffered for batch delivery",
+      );
+
+      return this.mapToDelivery(delivery);
+    }
+
+    // Standard immediate delivery
     const [delivery] = await db("webhook_deliveries")
       .insert({
         id: crypto.randomUUID(),
@@ -455,20 +505,47 @@ export class WebhookService {
       attemptNumber: 0,
     };
 
-    // Add to queue with optional delay for scheduled delivery
     if (params.scheduledAt && params.scheduledAt > Date.now()) {
-      const delay = params.scheduledAt - Date.now();
-      await this.deliveryQueue.add("webhook-delivery", jobData, { delay });
+      await this.deliveryQueue.add("webhook-delivery", jobData, { delay: params.scheduledAt - Date.now() });
     } else {
       await this.deliveryQueue.add("webhook-delivery", jobData);
     }
 
     logger.info(
       { deliveryId: delivery.id, webhookEndpointId: params.webhookEndpointId, eventType: params.eventType },
-      "Webhook delivery queued"
+      "Webhook delivery queued",
     );
 
     return this.mapToDelivery(delivery);
+  }
+
+  /** Manually flush the batch buffer for a specific endpoint before the window expires. */
+  public async flushBatchBuffer(webhookEndpointId: string): Promise<{ flushed: number }> {
+    return this.batchBuffer.flush(webhookEndpointId);
+  }
+
+  private async resolveBufferedDeliveries(
+    deliveryIds: string[],
+    status: "success" | "failed",
+    errorMessage?: string,
+  ): Promise<void> {
+    if (deliveryIds.length === 0) return;
+    const db = getDatabase();
+    await db("webhook_deliveries")
+      .whereIn("id", deliveryIds)
+      .update({
+        status,
+        last_attempt_at: new Date(),
+        ...(errorMessage ? { error_message: errorMessage } : {}),
+      });
+  }
+
+  /** Return live status of batch buffer windows. */
+  public getBatchBufferStatus(webhookEndpointId?: string): BatchBufferStatus | BatchBufferStatus[] | null {
+    if (webhookEndpointId) {
+      return this.batchBuffer.getStatus(webhookEndpointId);
+    }
+    return this.batchBuffer.listAll();
   }
 
   public async queueBatchDelivery(params: {
