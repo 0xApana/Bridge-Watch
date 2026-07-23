@@ -31,6 +31,7 @@ import { registerTracing } from "./api/middleware/tracing.js";
 import { getTelegramBotService } from "./services/telegram.bot.service.js";
 import { startOutboxSystem, stopOutboxSystem } from "./outbox/index.js";
 import { getEventFederationService } from "./services/eventFederation/index.js";
+import { schemaVerificationService } from "./services/schemaVerification.service.js";
 
 export async function buildServer() {
   const server = Fastify({
@@ -210,6 +211,8 @@ async function start() {
   const server = await buildServer();
 
   try {
+    await schemaVerificationService.enforceStartupGuard();
+
     await server.listen({ port: config.PORT, host: "0.0.0.0" });
     server.log.info(
       `Stellar Bridge Watch API running on port ${config.PORT}`
