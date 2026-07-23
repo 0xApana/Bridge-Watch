@@ -114,11 +114,21 @@ export class WebhookService {
 
   private constructor() {
     this.batchBuffer = new WebhookBatchBufferService(async (params) => {
-      await this.queueBatchDelivery({
-        webhookEndpointId: params.endpointId,
-        eventType: params.eventType,
-        events: params.events as Array<Record<string, any>>,
-      });
+      try {
+        await this.queueBatchDelivery({
+          webhookEndpointId: params.endpointId,
+          eventType: params.eventType,
+          events: params.events as Array<Record<string, any>>,
+        });
+        await this.resolveBufferedDeliveries(params.deliveryIds, "success");
+      } catch (err) {
+        await this.resolveBufferedDeliveries(
+          params.deliveryIds,
+          "failed",
+          err instanceof Error ? err.message : String(err),
+        );
+        throw err;
+      }
     });
 
     this.deliveryQueue = new Queue(WEBHOOK_QUEUE_NAME, {
@@ -460,6 +470,7 @@ export class WebhookService {
 
       this.batchBuffer.buffer({
         endpointId: params.webhookEndpointId,
+        deliveryId: delivery.id,
         eventType: params.eventType,
         payload: params.payload,
         windowMs: endpoint.batchWindowMs,
@@ -511,6 +522,22 @@ export class WebhookService {
   /** Manually flush the batch buffer for a specific endpoint before the window expires. */
   public async flushBatchBuffer(webhookEndpointId: string): Promise<{ flushed: number }> {
     return this.batchBuffer.flush(webhookEndpointId);
+  }
+
+  private async resolveBufferedDeliveries(
+    deliveryIds: string[],
+    status: "success" | "failed",
+    errorMessage?: string,
+  ): Promise<void> {
+    if (deliveryIds.length === 0) return;
+    const db = getDatabase();
+    await db("webhook_deliveries")
+      .whereIn("id", deliveryIds)
+      .update({
+        status,
+        last_attempt_at: new Date(),
+        ...(errorMessage ? { error_message: errorMessage } : {}),
+      });
   }
 
   /** Return live status of batch buffer windows. */

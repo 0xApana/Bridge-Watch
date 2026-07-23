@@ -4,6 +4,7 @@ import type { WebhookEventType } from "./webhook.service.js";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface BufferedEvent {
+  deliveryId: string;
   eventType: WebhookEventType;
   payload: Record<string, unknown>;
   bufferedAt: number;
@@ -21,6 +22,7 @@ export type BatchFlushCallback = (params: {
   endpointId: string;
   eventType: WebhookEventType;
   events: Array<Record<string, unknown>>;
+  deliveryIds: string[];
 }) => Promise<void>;
 
 interface BatchEntry {
@@ -44,13 +46,14 @@ export class WebhookBatchBufferService {
    */
   buffer(params: {
     endpointId: string;
+    deliveryId: string;
     eventType: WebhookEventType;
     payload: Record<string, unknown>;
     windowMs: number;
   }): void {
-    const { endpointId, eventType, payload, windowMs } = params;
+    const { endpointId, deliveryId, eventType, payload, windowMs } = params;
 
-    const event: BufferedEvent = { eventType, payload, bufferedAt: Date.now() };
+    const event: BufferedEvent = { deliveryId, eventType, payload, bufferedAt: Date.now() };
 
     const existing = this.buffers.get(endpointId);
     if (existing) {
@@ -92,16 +95,16 @@ export class WebhookBatchBufferService {
     this.buffers.delete(endpointId);
 
     const events = [...entry.events];
-    // Determine the dominant event type from the first event in the batch
     const eventType = events[0].eventType;
     const payloads = events.map((e) => e.payload);
+    const deliveryIds = events.map((e) => e.deliveryId);
 
     logger.info(
       { endpointId, eventCount: events.length, eventType },
       "Flushing batch buffer",
     );
 
-    await this.onFlush({ endpointId, eventType, events: payloads });
+    await this.onFlush({ endpointId, eventType, events: payloads, deliveryIds });
 
     return { flushed: events.length };
   }
