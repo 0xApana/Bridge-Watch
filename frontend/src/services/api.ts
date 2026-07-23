@@ -73,6 +73,59 @@ async function fetchApi<T>(
   return response.json();
 }
 
+export interface AnomalyTuningProfile {
+  id: string;
+  name: string;
+  deviation_multiplier: number;
+  sliding_window_size: number;
+  updated_by: string | null;
+  updated_at: string;
+}
+
+export interface AnomalyTuningOverride {
+  id: string;
+  anomaly_type: string;
+  asset_code: string;
+  bridge_name: string;
+  reason: string;
+  starts_at: string;
+  expires_at: string;
+}
+
+export function getAnomalyTuning(apiKey: string) {
+  return fetchApi<{ profile: AnomalyTuningProfile; overrides: AnomalyTuningOverride[] }>(
+    "/anomaly/tuning",
+    undefined,
+    apiKey
+  );
+}
+
+export function updateAnomalyTuning(
+  apiKey: string,
+  input: { deviationMultiplier: number; slidingWindowSize: number }
+) {
+  return fetchApi<{ profile: AnomalyTuningProfile }>(
+    "/anomaly/tuning",
+    { method: "PUT", body: JSON.stringify(input) },
+    apiKey
+  );
+}
+
+export function createAnomalyTuningOverride(
+  apiKey: string,
+  input: { assetCode?: string; reason: string; expiresAt: string }
+) {
+  return fetchApi<{ override: AnomalyTuningOverride }>(
+    "/anomaly/tuning/overrides",
+    { method: "POST", body: JSON.stringify(input) },
+    apiKey
+  );
+}
+
+export function deleteAnomalyTuningOverride(apiKey: string, id: string) {
+  return fetchApi<void>(`/anomaly/tuning/overrides/${id}`, { method: "DELETE" }, apiKey);
+}
+
 /** Root health endpoint (not under /api/v1). */
 export async function getServerHealth(): Promise<{ status: string; timestamp: string }> {
   const response = await fetch("/health");
