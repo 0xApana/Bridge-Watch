@@ -264,6 +264,42 @@ export async function webhooksRoutes(server: FastifyInstance) {
   );
 
   // ---------------------------------------------------------------------------
+  // CIRCUIT BREAKER
+  // ---------------------------------------------------------------------------
+
+  // Get circuit breaker status for an endpoint
+  server.get<{ Params: EndpointParams }>(
+    "/endpoints/:id/circuit-breaker",
+    async (request: FastifyRequest<{ Params: EndpointParams }>, reply: FastifyReply) => {
+      const endpoint = await webhookService.getEndpoint(request.params.id);
+      if (!endpoint) {
+        return reply.code(404).send({ error: "Webhook endpoint not found" });
+      }
+      return webhookService.getCircuitBreakerState(endpoint);
+    }
+  );
+
+  // Manually reset the circuit breaker for an endpoint
+  server.post<{ Params: EndpointParams }>(
+    "/endpoints/:id/circuit-breaker/reset",
+    async (request: FastifyRequest<{ Params: EndpointParams }>, reply: FastifyReply) => {
+      try {
+        const endpoint = await webhookService.resetCircuitBreaker(request.params.id);
+        if (!endpoint) {
+          return reply.code(404).send({ error: "Webhook endpoint not found" });
+        }
+        return {
+          message: "Circuit breaker reset successfully",
+          endpoint,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to reset circuit breaker";
+        return reply.code(400).send({ error: message });
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
   // BATCH BUFFER
   // ---------------------------------------------------------------------------
 

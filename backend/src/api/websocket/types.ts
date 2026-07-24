@@ -236,11 +236,29 @@ export interface BridgeUpdateMessage {
   timestamp: string;
 }
 
+export interface WebhookSystemEventData {
+  event: "circuit_breaker_tripped" | "circuit_breaker_reset";
+  webhookEndpointId: string;
+  endpointName: string;
+  endpointUrl: string;
+  ownerAddress: string;
+  consecutiveFailures?: number;
+  threshold?: number;
+}
+
+export interface WebhookSystemEventMessage {
+  type: "webhook_system_event";
+  channel: "events";
+  data: WebhookSystemEventData;
+  timestamp: string;
+}
+
 export type OutboundDataMessage =
   | PriceUpdateMessage
   | HealthUpdateMessage
   | AlertTriggeredMessage
-  | BridgeUpdateMessage;
+  | BridgeUpdateMessage
+  | WebhookSystemEventMessage;
 
 export type OutboundMessage =
   | WelcomeMessage
