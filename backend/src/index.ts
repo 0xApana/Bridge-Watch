@@ -23,6 +23,8 @@ import { initJobSystem } from "./workers/index.js";
 import { JobQueue } from "./workers/queue.js";
 import { initWebhookWorker, stopWebhookWorker } from "./workers/webhookDelivery.worker.js";
 import { initNotificationQueueWorker, stopNotificationQueueWorker } from "./workers/notificationQueue.worker.js";
+import { webhookService } from "./services/webhook.service.js";
+import type { WebhookSystemEventData } from "./api/websocket/types.js";
 import { getSupplyVerificationQueue } from "./jobs/supplyVerification.job.js";
 import { swaggerOptions, swaggerUiOptions } from "./config/openapi.js";
 import { registerCorrelationMiddleware } from "./api/middleware/correlation.middleware.js";
@@ -223,6 +225,39 @@ async function start() {
 
     // Initialize webhook delivery worker
     await initWebhookWorker();
+
+    // Wire up webhook circuit breaker events to WebSocket broadcast
+    webhookService.on("webhook:circuit_breaker:tripped", (data: WebhookSystemEventData & { consecutiveFailures: number; threshold: number }) => {
+      wsServer.broadcastToChannel("events", {
+        type: "webhook_system_event",
+        channel: "events",
+        data: {
+          event: "circuit_breaker_tripped",
+          webhookEndpointId: data.webhookEndpointId,
+          endpointName: data.endpointName,
+          endpointUrl: data.endpointUrl,
+          ownerAddress: data.ownerAddress,
+          consecutiveFailures: data.consecutiveFailures,
+          threshold: data.threshold,
+        },
+        timestamp: new Date().toISOString(),
+      }).catch((err) => logger.error({ err }, "Failed to broadcast webhook circuit breaker tripped event"));
+    });
+
+    webhookService.on("webhook:circuit_breaker:reset", (data: WebhookSystemEventData) => {
+      wsServer.broadcastToChannel("events", {
+        type: "webhook_system_event",
+        channel: "events",
+        data: {
+          event: "circuit_breaker_reset",
+          webhookEndpointId: data.webhookEndpointId,
+          endpointName: data.endpointName,
+          endpointUrl: data.endpointUrl,
+          ownerAddress: data.ownerAddress,
+        },
+        timestamp: new Date().toISOString(),
+      }).catch((err) => logger.error({ err }, "Failed to broadcast webhook circuit breaker reset event"));
+    });
 
     // Initialize notification queue worker
     await initNotificationQueueWorker();
