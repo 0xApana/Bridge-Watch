@@ -1,6 +1,7 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
 import type { HealthFactors, HealthStatus } from "../types";
 import Sparkline from "./Sparkline";
+import Tooltip from "./Tooltip/Tooltip";
 
 interface HealthScoreCardProps {
   symbol: string;
@@ -142,14 +143,39 @@ export default function HealthScoreCard({
             <p className="text-sm text-stellar-text-secondary truncate">{name}</p>
           )}
         </div>
-        <div
-          className="px-2.5 py-1 rounded-full text-xs font-medium"
-          style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
-          role="status"
-          aria-label={`Status: ${getStatusLabel(status)}`}
+        <Tooltip
+          placement="left"
+          delay={200}
+          content={
+            <div className="space-y-2">
+              <div className="font-semibold text-stellar-text-primary">Health Breakdown</div>
+              {(Object.entries(factors) as [keyof HealthFactors, number][]).map(
+                ([key, value]) => (
+                  <div key={key} className="flex justify-between gap-4 text-xs">
+                    <span className="text-stellar-text-secondary">{FACTOR_LABELS[key]}:</span>
+                    <span className="font-medium text-stellar-text-primary">{value}/100</span>
+                  </div>
+                )
+              )}
+              <div className="border-t border-stellar-border/40 pt-2 mt-2">
+                <div className="flex justify-between gap-4 text-xs">
+                  <span className="text-stellar-text-secondary font-medium">Overall:</span>
+                  <span className="font-bold text-stellar-text-primary">{overallScore}/100</span>
+                </div>
+              </div>
+            </div>
+          }
+          aria-label={`${symbol} health score breakdown tooltip`}
         >
-          {getStatusLabel(status)}
-        </div>
+          <div
+            className="px-2.5 py-1 rounded-full text-xs font-medium cursor-help"
+            style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
+            role="status"
+            aria-label={`Status: ${getStatusLabel(status)}`}
+          >
+            {getStatusLabel(status)}
+          </div>
+        </Tooltip>
       </div>
 
       <div className="flex justify-center mb-4">
