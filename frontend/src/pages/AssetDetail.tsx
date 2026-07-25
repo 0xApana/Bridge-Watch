@@ -99,6 +99,7 @@ export default function AssetDetail() {
       }
     },
     enabled: !!symbol,
+    staleTime: 5 * 60 * 1000, // 5 minutes - prevent redundant API calls on tab changes
   });
 
   const annotations = useChartAnnotations(symbol ?? "");

@@ -5,13 +5,10 @@ dotenv.config();
 
 const envSchema = z.object({
   NODE_ENV: z
-    .enum(["development", "production", "test", "sandbox"])
+    .enum(["development", "production", "test"])
     .default("development"),
   PORT: z.coerce.number().default(3001),
   WS_PORT: z.coerce.number().default(3002),
-
-  // CORS — comma-separated list of allowed origins for production
-  CORS_ALLOWED_ORIGINS: z.string().optional(),
 
   // PostgreSQL + TimescaleDB
   POSTGRES_HOST: z.string().default("localhost"),
@@ -55,19 +52,6 @@ const envSchema = z.object({
   BASE_RPC_URL: z.string().url().optional(),
   BASE_RPC_FALLBACK_URL: z.string().url().optional(),
 
-  // Wormhole multi-chain bridge watcher — lock contract + watched token address
-  // per EVM chain. Verify against https://docs.wormhole.com/wormhole/reference/contracts
-  // before setting; an incorrect address silently monitors the wrong contract.
-  WORMHOLE_TOKEN_BRIDGE_ETHEREUM_ADDRESS: z.string().optional(),
-  WORMHOLE_TOKEN_BRIDGE_POLYGON_ADDRESS: z.string().optional(),
-  WORMHOLE_TOKEN_BRIDGE_BASE_ADDRESS: z.string().optional(),
-  WORMHOLE_WATCHED_TOKEN_ETHEREUM_ADDRESS: z.string().optional(),
-  WORMHOLE_WATCHED_TOKEN_POLYGON_ADDRESS: z.string().optional(),
-  WORMHOLE_WATCHED_TOKEN_BASE_ADDRESS: z.string().optional(),
-  // Stellar-side wrapped asset code/issuer this watcher reconciles the EVM lock total against.
-  WORMHOLE_WATCHED_ASSET_SYMBOL: z.string().default("wETH"),
-  WORMHOLE_WATCHED_ASSET_STELLAR_ISSUER: z.string().optional(),
-
   // External APIs
   CIRCLE_API_KEY: z.string().optional(),
   // Circle API base URL — use sandbox for non-production environments
@@ -86,12 +70,6 @@ const envSchema = z.object({
   COINBASE_API_KEY: z.string().optional(),
   COINBASE_API_SECRET: z.string().optional(),
   API_KEY_BOOTSTRAP_TOKEN: z.string().optional(),
-
-  // JWT / OAuth2 Configuration
-  JWT_SECRET: z.string().optional(),
-  JWT_ISSUER: z.string().default("bridge-watch-api"),
-  JWT_AUDIENCE: z.string().default("bridge-watch-api"),
-  JWT_TTL_SECONDS: z.coerce.number().default(3600),
 
   // Logging
   LOG_LEVEL: z
@@ -166,7 +144,6 @@ const envSchema = z.object({
   EXPORT_DOWNLOAD_URL_EXPIRY_HOURS: z.coerce.number().default(24),
   EXPORT_COMPRESSION_THRESHOLD_BYTES: z.coerce.number().default(1048576), // 1MB
   EXPORT_STREAMING_PAGE_SIZE: z.coerce.number().default(1000),
-  EXPORT_STREAMING_MAX_ROWS: z.coerce.number().default(0),
   EXPORT_QUEUE_CONCURRENCY: z.coerce.number().default(3),
   EXPORT_MAX_DATE_RANGE_DAYS: z.coerce.number().default(90),
 
@@ -200,10 +177,20 @@ const envSchema = z.object({
   HEALTH_CHECK_MEMORY_THRESHOLD: z.coerce.number().default(90),
   HEALTH_CHECK_DISK_THRESHOLD: z.coerce.number().default(80),
   HEALTH_CHECK_EXTERNAL_APIS: z.string().default("true"),
-  MAINTENANCE_MODE: z.coerce.boolean().default(false),
-  MAINTENANCE_MESSAGE: z.string().default(""),
-  MAINTENANCE_SEVERITY: z.enum(["info", "warning", "critical"]).default("info"),
-  STATUS_PAGE_URL: z.string().url().optional(),
+
+  // CORS Configuration
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .default("")
+    .transform((val) => 
+      val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
+
+  // Slack Notifications
+  SLACK_WEBHOOK_URL: z.string().url().optional(),
 
   // Data Validation Configuration
   VALIDATION_STRICT_MODE: z.coerce.boolean().default(false),
@@ -216,15 +203,6 @@ const envSchema = z.object({
   VALIDATION_ERROR_THRESHOLD: z.coerce.number().default(0.1), // 10% error rate threshold
   VALIDATION_WARNING_THRESHOLD: z.coerce.number().default(0.3), // 30% warning threshold
   VALIDATION_DATA_QUALITY_THRESHOLD: z.coerce.number().default(70), // 70% quality score threshold
-
-  // Ingestion Confirmation Settings
-  INGESTION_MIN_CONFIRMATIONS_STELLAR: z.coerce.number().default(3),
-  INGESTION_MIN_CONFIRMATIONS_ETHEREUM: z.coerce.number().default(12),
-  INGESTION_MIN_CONFIRMATIONS_POLYGON: z.coerce.number().default(12),
-  INGESTION_MIN_CONFIRMATIONS_BASE: z.coerce.number().default(12),
-  INGESTION_REORG_BUFFER_DEPTH: z.coerce.number().default(100),
-  INGESTION_REORG_POLL_INTERVAL_MS: z.coerce.number().default(30_000),
-  INGESTION_UNCONFIRMED_EVENT_TTL_MINUTES: z.coerce.number().default(60),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;
@@ -234,23 +212,13 @@ export interface StellarAssetConfig {
   issuer: string;
 }
 
-function validateIssuerAddress(asset: StellarAssetConfig): void {
-  if (asset.issuer !== "native" && asset.issuer.length !== 56) {
-    throw new Error(
-      `[config] Invalid issuer for ${asset.code}: expected 56 chars, got ${asset.issuer.length}`
-    );
-  }
-}
-
 export const SUPPORTED_ASSETS: StellarAssetConfig[] = [
   { code: "XLM", issuer: "native" },
   { code: "USDC", issuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN" },
   { code: "PYUSD", issuer: "GBHZAE5IQTOPQZ66TFWZYIYCHQ6T3GMWHDKFEXAKYWJ2BHLZQ227KRYE" },
   { code: "EURC", issuer: "GDQOE23CFSUMSVZZ4YRVXGW7PCFNIAHLMRAHDE4Z32DIBQGH4KZZK2KZ" },
-  { code: "FOBXX", issuer: "GBHNGLLIE3KWGKCHIKMHJ5HVZHYIK7WTBE4QF5PLAKL4CJGSEU7HZIW5" },
+  { code: "FOBXX", issuer: "GBX7VUT2UTUKO2H76J26D7QYWNFW6C2NYN6K74Y3K43HGBXYZ" },
 ];
-
-SUPPORTED_ASSETS.forEach(validateIssuerAddress);
 
 const parsed = envSchema.safeParse(process.env);
 
@@ -260,11 +228,3 @@ if (!parsed.success) {
 }
 
 export const config: EnvConfig = parsed.data;
-
-export const BRIDGE_MISMATCH_THRESHOLD = process.env.BRIDGE_MISMATCH_THRESHOLD 
-  ? parseFloat(process.env.BRIDGE_MISMATCH_THRESHOLD) 
-  : 0.01;
-
-export const HEALTH_SCORE_THRESHOLD = process.env.HEALTH_SCORE_THRESHOLD 
-  ? parseFloat(process.env.HEALTH_SCORE_THRESHOLD) 
-  : 0.5;
