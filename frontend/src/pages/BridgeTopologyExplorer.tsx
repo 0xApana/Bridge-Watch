@@ -82,7 +82,7 @@ function TopologyDetailPanel({
   return null;
 }
 
-export type StatusFilterType = "all" | "healthy" | "degraded" | "down";
+export type StatusFilterType = "all" | "healthy" | "degraded" | "offline";
 
 export default function BridgeTopologyExplorer() {
   const { data, isLoading, error } = useSupplyChainData();
@@ -105,12 +105,11 @@ export default function BridgeTopologyExplorer() {
     let nodes = graph.nodes;
     let edges = graph.edges;
 
-    // Filter by status
+    // Filter by bridge status; keep only chains connected by a matching bridge
     if (statusFilter !== "all") {
-      nodes = nodes.filter((node) => node.status === statusFilter);
       edges = edges.filter((edge) => edge.status === statusFilter);
-      const nodeIds = new Set(nodes.map((n) => n.id));
-      edges = edges.filter((edge) => nodeIds.has(edge.source) && nodeIds.has(edge.target));
+      const connected = new Set(edges.flatMap((e) => [e.source, e.target]));
+      nodes = nodes.filter((node) => connected.has(node.id));
     }
 
     if (chainQuery) {
@@ -188,7 +187,7 @@ export default function BridgeTopologyExplorer() {
             <option value="all">All</option>
             <option value="healthy">Healthy</option>
             <option value="degraded">Degraded</option>
-            <option value="down">Down</option>
+            <option value="offline">Offline</option>
           </select>
         </label>
       </div>
