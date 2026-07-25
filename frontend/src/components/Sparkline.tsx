@@ -166,6 +166,10 @@ function SparklineImpl({
               </defs>
 
               <Tooltip
+                useTranslate3d
+                isAnimationActive={false}
+                wrapperStyle={{ outline: "none", pointerEvents: "none" }}
+                allowEscapeViewBox={{ x: true, y: true }}
                 content={
                   <SparklineTooltip
                     formatter={valueFormatter}
