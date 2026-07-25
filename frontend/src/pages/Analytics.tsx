@@ -5,6 +5,7 @@ import SnapshotCard from "../components/analytics/SnapshotCard";
 import BridgeComparison from "../components/analytics/BridgeComparison";
 import IncidentHeatmap from "../components/IncidentHeatmap";
 import AnomalyTrendCharts from "../components/AnomalyTrendCharts";
+import AnomalyTuningPanel from "../components/AnomalyTuningPanel";
 import type { BridgeAnalytics } from "../hooks/useAnalytics";
 import { useAssetsWithHealth } from "../hooks/useAssets";
 import { usePricesForSymbols } from "../hooks/usePrices";
@@ -241,6 +242,8 @@ export default function Analytics() {
 
       {/* Anomaly Trend Charts */}
       <AnomalyTrendCharts />
+
+      <AnomalyTuningPanel />
 
       {/* Health Score Trends */}
       <div className="bg-stellar-card border border-stellar-border rounded-lg p-6">

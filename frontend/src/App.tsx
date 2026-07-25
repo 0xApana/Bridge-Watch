@@ -46,6 +46,7 @@ const CrossChainVerification = lazy(() => import("./pages/CrossChainVerification
 const FreshnessMonitoring = lazy(() => import("./pages/FreshnessMonitoring"));
 const ServiceAnnotations = lazy(() => import("./pages/ServiceAnnotations"));
 const CircuitBreakerActions = lazy(() => import("./pages/CircuitBreakerActions"));
+const LiquidityConcentration = lazy(() => import("./pages/LiquidityConcentration"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -101,6 +102,7 @@ function App() {
               <Route path="/freshness" element={<FreshnessMonitoring />} />
               <Route path="/service-annotations" element={<ServiceAnnotations />} />
               <Route path="/circuit-breaker-actions" element={<CircuitBreakerActions />} />
+              <Route path="/liquidity-concentration" element={<LiquidityConcentration />} />
             </Route>
           </Routes>
         </Suspense>

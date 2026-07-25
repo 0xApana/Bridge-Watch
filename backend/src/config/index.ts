@@ -166,6 +166,7 @@ const envSchema = z.object({
   EXPORT_DOWNLOAD_URL_EXPIRY_HOURS: z.coerce.number().default(24),
   EXPORT_COMPRESSION_THRESHOLD_BYTES: z.coerce.number().default(1048576), // 1MB
   EXPORT_STREAMING_PAGE_SIZE: z.coerce.number().default(1000),
+  EXPORT_STREAMING_MAX_ROWS: z.coerce.number().default(0),
   EXPORT_QUEUE_CONCURRENCY: z.coerce.number().default(3),
   EXPORT_MAX_DATE_RANGE_DAYS: z.coerce.number().default(90),
 
@@ -215,6 +216,15 @@ const envSchema = z.object({
   VALIDATION_ERROR_THRESHOLD: z.coerce.number().default(0.1), // 10% error rate threshold
   VALIDATION_WARNING_THRESHOLD: z.coerce.number().default(0.3), // 30% warning threshold
   VALIDATION_DATA_QUALITY_THRESHOLD: z.coerce.number().default(70), // 70% quality score threshold
+
+  // Ingestion Confirmation Settings
+  INGESTION_MIN_CONFIRMATIONS_STELLAR: z.coerce.number().default(3),
+  INGESTION_MIN_CONFIRMATIONS_ETHEREUM: z.coerce.number().default(12),
+  INGESTION_MIN_CONFIRMATIONS_POLYGON: z.coerce.number().default(12),
+  INGESTION_MIN_CONFIRMATIONS_BASE: z.coerce.number().default(12),
+  INGESTION_REORG_BUFFER_DEPTH: z.coerce.number().default(100),
+  INGESTION_REORG_POLL_INTERVAL_MS: z.coerce.number().default(30_000),
+  INGESTION_UNCONFIRMED_EVENT_TTL_MINUTES: z.coerce.number().default(60),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

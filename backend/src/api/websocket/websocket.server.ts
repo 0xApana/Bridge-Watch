@@ -1,8 +1,8 @@
 import { randomUUID } from "crypto";
 import type { FastifyRequest } from "fastify";
-import Redis from "ioredis";
 import { config } from "../../config/index.js";
 import { logger } from "../../utils/logger.js";
+import { factory, redisSubscriber } from "../../utils/redis.js";
 import {
   type ClientState,
   type ChannelName,
@@ -58,11 +58,11 @@ export class WebSocketServer implements IBroadcaster {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
   /**
-   * Dedicated Redis client in subscribe mode.
+   * Shared Redis subscriber from the factory.
    * A Redis client in subscribe mode cannot issue regular commands, so we keep
-   * a separate instance here and use the shared `redis` util for publishing.
+   * a separate subscriber client here and use the standard `redis` for publishing.
    */
-  private readonly subscriber: Redis;
+  private readonly subscriber: typeof redisSubscriber;
 
   private readonly counters = {
     totalConnections: 0,
@@ -74,12 +74,7 @@ export class WebSocketServer implements IBroadcaster {
   constructor() {
     this.channelManager = new ChannelManager(this);
 
-    this.subscriber = new Redis({
-      host: config.REDIS_HOST,
-      port: config.REDIS_PORT,
-      password: config.REDIS_PASSWORD || undefined,
-      lazyConnect: true,
-    });
+    this.subscriber = redisSubscriber;
 
     this.subscriber.on("error", (err) => {
       logger.error({ err }, "WS Redis subscriber error");
@@ -124,9 +119,7 @@ export class WebSocketServer implements IBroadcaster {
     channel: ChannelName,
     payload: string
   ): Promise<void> {
-    // Import lazily to avoid module-load ordering issues.
-    const { redis } = await import("../../utils/redis.js");
-    await redis.publish(REDIS_WS_CHANNELS[channel], payload);
+    await factory.getClient().publish(REDIS_WS_CHANNELS[channel], payload);
   }
 
   // ─── Connection handling ────────────────────────────────────────────────────

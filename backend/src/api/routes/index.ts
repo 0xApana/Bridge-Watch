@@ -69,6 +69,7 @@ import { providerAllowlistRoutes } from "./providerAllowlist.routes.js";
 import { providerAllowlistAdminRoutes } from "./providerAllowlistAdmin.routes.js";
 import { provenanceRoutes } from "./provenance.routes.js";
 import { anomalyDetectionRoutes } from "./anomalyDetection.routes.js";
+import { anomalyTuningRoutes } from "./anomalyTuning.routes.js";
 import { liquidityFragmentationRoutes } from "./liquidityFragmentation.routes.js";
 import { operationalAccessAuditRoutes } from "./operationalAccessAudit.js";
 import { ownershipMatrixRoutes } from "./ownershipMatrix.js";
@@ -85,6 +86,8 @@ import { eventReplayRoutes } from "./eventReplay.routes.js";
 import { sourceDecommissionRoutes } from "./sourceDecommission.routes.js";
 import { providerCircuitBreakerRoutes } from "./providerCircuitBreaker.routes.js";
 import { crossChainVerificationRoutes } from "./crossChainVerification.routes.js";
+import { eventFederationRoutes } from "./eventFederation.routes.js";
+import { eventSourceKeyRoutes } from "./eventSourceKeys.routes.js";
 
 export async function registerRoutes(server: FastifyInstance) {
   server.register(assetsRoutes, { prefix: "/api/v1/assets" });
@@ -187,6 +190,7 @@ export async function registerRoutes(server: FastifyInstance) {
   });
   server.register(provenanceRoutes, { prefix: "/api/v1/provenance" });
   server.register(anomalyDetectionRoutes, { prefix: "/api/v1/anomaly-detection" });
+  server.register(anomalyTuningRoutes, { prefix: "/api/v1/anomaly" });
   server.register(liquidityFragmentationRoutes, { prefix: "/api/v1" });
   server.register(operationalAccessAuditRoutes, {
     prefix: "/api/v1/admin/access-audit",
@@ -206,4 +210,6 @@ export async function registerRoutes(server: FastifyInstance) {
   server.register(crossChainVerificationRoutes, {
     prefix: "/api/v1/cross-chain-verification",
   });
+  server.register(eventFederationRoutes, { prefix: "/api/v1/event-federation" });
+  server.register(eventSourceKeyRoutes, { prefix: "/api/v1/admin/event-source-keys" });
 }
