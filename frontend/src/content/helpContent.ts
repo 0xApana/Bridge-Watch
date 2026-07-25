@@ -113,6 +113,16 @@ export const helpArticles: HelpArticle[] = [
       "Bridge operators commit reserve balances on-chain via Merkle trees. Each commitment has a proof depth (tree height) and leaf count. To verify a specific leaf: use the leaf hash, proof path (sibling hashes), and leaf index against the published Merkle root. The Cross-Chain State Verification page shows proof validity and depth for each bridge. A valid proof means the reported reserve balances match the on-chain commitment. Challenged items appear in orange with a pulsing indicator and require manual inspection. The Reconciliation page displays the reserve commitment's verification status alongside the Merkle root, sequence number, and ledger position.",
     related: ["article-refresh-controls", "article-stale-data"],
   },
+  {
+    id: "article-operational-runbooks",
+    slug: "operational-runbooks",
+    title: "Operational runbooks and alert response",
+    category: "alerts",
+    summary: "Runbooks for critical alerts and incident response procedures.",
+    content:
+      "Operational runbooks provide step-by-step response procedures for triggered alerts. Access the monitoring runbooks for guidance on handling BackendDown, HighHTTPErrorRate, HighP95Latency, BridgeHealthLow, and other critical alerts. Each runbook includes diagnosis steps and mitigation strategies. See /monitoring/runbooks/ for the complete alert playbook library.",
+    related: ["article-alert-thresholds", "article-stale-data"],
+  },
 ];
 
 export const faqItems: FaqItem[] = [
