@@ -62,6 +62,7 @@ export const navGroups: NavGroup[] = [
         description: "Review operator roles, permissions, and access history",
       },
       { to: "/settings", label: "Settings", labelKey: "nav.settings", description: "Notification and dashboard preferences" },
+      { to: "/circuit-breaker-actions", label: "Circuit Breaker Remediation", description: "Manage automated circuit breaker remediation actions and execution logs" },
       { to: "/export-scheduler", label: "Export Scheduler", description: "Schedule recurring report exports" },
       { to: "/metrics-sidebar", label: "Pinned Metrics", description: "Pin and manage frequently viewed metrics" },
     ],
