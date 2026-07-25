@@ -496,6 +496,7 @@ export interface AuditEvent {
   action: string;
   resourceType: string;
   resourceId: string;
+  severity?: "info" | "warning" | "critical";
   ipAddress?: string;
   userAgent?: string;
   metadata?: Record<string, unknown>;
