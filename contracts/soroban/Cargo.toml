@@ -37,3 +37,7 @@ path = "tests/operator_rotation.test.rs"
 [[test]]
 name = "threshold_window_test"
 path = "tests/threshold_window.test.rs"
+
+[[test]]
+name = "acl_test"
+path = "tests/acl.test.rs"
