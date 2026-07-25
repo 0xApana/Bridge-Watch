@@ -9,11 +9,7 @@ import { logger } from "./utils/logger.js";
 import { registerRoutes } from "./api/routes/index.js";
 import { registerValidation } from "./api/middleware/validation.js";
 import { registerMetrics } from "./api/middleware/metrics.js";
-import { registerUsageMetrics } from "./api/middleware/usageMetrics.js";
 import { startBridgeVerificationJob } from "./jobs/verification.job.js";
-import { startBatchReconciliationJob, stopBatchReconciliationJob } from "./jobs/batchReconciliation.job.js";
-import { startSourceDecommissionJob, stopSourceDecommissionJob } from "./jobs/sourceDecommission.job.js";
-import { startProviderCircuitBreakerJob, stopProviderCircuitBreakerJob } from "./jobs/providerCircuitBreaker.job.js";
 import { wsServer } from "./api/websocket/websocket.server.js";
 import {
   registerRateLimiting,
@@ -22,18 +18,12 @@ import {
 import { initJobSystem } from "./workers/index.js";
 import { JobQueue } from "./workers/queue.js";
 import { initWebhookWorker, stopWebhookWorker } from "./workers/webhookDelivery.worker.js";
-import { initNotificationQueueWorker, stopNotificationQueueWorker } from "./workers/notificationQueue.worker.js";
-import { webhookService } from "./services/webhook.service.js";
-import type { WebhookSystemEventData } from "./api/websocket/types.js";
 import { getSupplyVerificationQueue } from "./jobs/supplyVerification.job.js";
 import { swaggerOptions, swaggerUiOptions } from "./config/openapi.js";
 import { registerCorrelationMiddleware } from "./api/middleware/correlation.middleware.js";
 import { registerRequestLoggingMiddleware } from "./api/middleware/logging.middleware.js";
 import { registerTracing } from "./api/middleware/tracing.js";
 import { getTelegramBotService } from "./services/telegram.bot.service.js";
-import { startOutboxSystem, stopOutboxSystem } from "./outbox/index.js";
-import { getEventFederationService } from "./services/eventFederation/index.js";
-import { schemaVerificationService } from "./services/schemaVerification.service.js";
 
 export async function buildServer() {
   const server = Fastify({
@@ -84,46 +74,21 @@ export async function buildServer() {
   // Register metrics middleware (to capture all requests)
   await registerMetrics(server as any);
 
-  // Register lightweight usage metrics middleware (stores aggregates for queries)
-  await registerUsageMetrics(server as any);
-
-  // Register RBAC Admin Audit logging hook
-  server.addHook("onResponse", async (request, reply) => {
-    if (
-      request.url.startsWith("/api/v1/admin") &&
-      ["POST", "PUT", "DELETE", "PATCH"].includes(request.method) &&
-      reply.statusCode < 400
-    ) {
-      try {
-        const { auditService } = await import("./services/audit.service.js");
-        await auditService.log({
-          action: `${request.method} ${request.url.split("?")[0]}`,
-          actorId: (request as any).user?.address || (request as any).user?.id || (request.headers["x-user-address"] as string) || "admin",
-          actorType: "admin",
-          ipAddress: request.ip,
-          userAgent: request.headers["user-agent"],
-          resourceType: "admin_endpoint",
-          resourceId: request.url,
-          metadata: {
-            method: request.method,
-            url: request.url,
-            statusCode: reply.statusCode,
-          },
-        });
-      } catch (err) {
-        logger.error({ err }, "Failed to log admin audit entry in onResponse hook");
-      }
-    }
-  });
-
   // Register plugins
-  const corsOrigin = config.NODE_ENV === "production"
-    ? (config as any).CORS_ALLOWED_ORIGINS
-      ? (config as any).CORS_ALLOWED_ORIGINS.split(",").map((s: string) => s.trim())
-      : false  // block all cross-origin in production if not configured
-    : true;    // allow all origins in development/test
   await server.register(cors, {
-    origin: corsOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin is in the allowed list
+      if (config.CORS_ALLOWED_ORIGINS.includes(origin)) {
+        return callback(null, true);
+      }
+      
+      // Log rejected origins for debugging
+      logger.warn({ msg: 'CORS_REJECTED', origin });
+      return callback(null, false);
+    },
     credentials: true,
   });
 
@@ -134,11 +99,9 @@ export async function buildServer() {
   // Sliding-window Redis rate limiting (replaces the simple @fastify/rate-limit global)
   await registerRateLimiting(server as any);
 
-  // Register official rate-limit plugin to satisfy CodeQL static analysis and enforce global rate protection
+  // Register official rate-limit plugin to satisfy CodeQL and handle per-route config
   await server.register(rateLimit, {
-    global: true,
-    max: config.NODE_ENV === "test" ? 10000 : 100,
-    timeWindow: "1 minute",
+    global: false,
     addHeaders: {
       "x-ratelimit-limit": false,
       "x-ratelimit-remaining": false,
@@ -180,61 +143,6 @@ export async function buildServer() {
     },
   );
 
-  // Outbox health check endpoint
-  server.get(
-    "/api/v1/health/outbox",
-    {
-      schema: {
-        tags: ["Health"],
-        summary: "Outbox system health check",
-        response: {
-          200: {
-            type: "object",
-            properties: {
-              status: { type: "string", enum: ["healthy", "degraded", "unhealthy"] },
-              details: {
-                type: "object",
-                properties: {
-                  initialized: { type: "boolean" },
-                  dispatcherRunning: { type: "boolean" },
-                  pendingEvents: { type: "number" },
-                  failedEvents: { type: "number" },
-                  deadLetterEvents: { type: "number" },
-                },
-              },
-              timestamp: { type: "string", format: "date-time" },
-            },
-          },
-        },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const { getOutboxSystem } = await import("./outbox/index.js");
-        const outboxSystem = getOutboxSystem();
-        const healthCheck = await outboxSystem.healthCheck();
-        
-        return {
-          ...healthCheck,
-          timestamp: new Date().toISOString(),
-        };
-      } catch (error) {
-        return reply.code(200 as any).send({
-          status: "unhealthy",
-          details: {
-            initialized: false,
-            dispatcherRunning: false,
-            pendingEvents: 0,
-            failedEvents: 0,
-            deadLetterEvents: 0,
-          },
-          error: "Outbox system not available",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    },
-  );
-
   return server;
 }
 
@@ -242,8 +150,6 @@ async function start() {
   const server = await buildServer();
 
   try {
-    await schemaVerificationService.enforceStartupGuard();
-
     await server.listen({ port: config.PORT, host: "0.0.0.0" });
     server.log.info(
       `Stellar Bridge Watch API running on port ${config.PORT}`
@@ -255,61 +161,16 @@ async function start() {
     // Initialize webhook delivery worker
     await initWebhookWorker();
 
-    // Wire up webhook circuit breaker events to WebSocket broadcast
-    webhookService.on("webhook:circuit_breaker:tripped", (data: WebhookSystemEventData & { consecutiveFailures: number; threshold: number }) => {
-      wsServer.broadcastToChannel("events", {
-        type: "webhook_system_event",
-        channel: "events",
-        data: {
-          event: "circuit_breaker_tripped",
-          webhookEndpointId: data.webhookEndpointId,
-          endpointName: data.endpointName,
-          endpointUrl: data.endpointUrl,
-          ownerAddress: data.ownerAddress,
-          consecutiveFailures: data.consecutiveFailures,
-          threshold: data.threshold,
-        },
-        timestamp: new Date().toISOString(),
-      }).catch((err) => logger.error({ err }, "Failed to broadcast webhook circuit breaker tripped event"));
-    });
-
-    webhookService.on("webhook:circuit_breaker:reset", (data: WebhookSystemEventData) => {
-      wsServer.broadcastToChannel("events", {
-        type: "webhook_system_event",
-        channel: "events",
-        data: {
-          event: "circuit_breaker_reset",
-          webhookEndpointId: data.webhookEndpointId,
-          endpointName: data.endpointName,
-          endpointUrl: data.endpointUrl,
-          ownerAddress: data.ownerAddress,
-        },
-        timestamp: new Date().toISOString(),
-      }).catch((err) => logger.error({ err }, "Failed to broadcast webhook circuit breaker reset event"));
-    });
-
-    // Initialize notification queue worker
-    await initNotificationQueueWorker();
-
-    // Start outbox dispatcher (after all other systems are ready)
-    await startOutboxSystem();
-    server.log.info("Outbox dispatcher started");
-
-    // Start real-time event stream federation
-    await getEventFederationService().start();
-    server.log.info("Event federation service started");
-
-    // Start batch reconciliation job
-    startBatchReconciliationJob();
-    server.log.info("Batch reconciliation job started");
-
-    // Start source decommission readiness checks
-    startSourceDecommissionJob();
-    server.log.info("Source decommission readiness job started");
-
-    // Start provider circuit breaker recovery probe sweep
-    startProviderCircuitBreakerJob();
-    server.log.info("Provider circuit breaker job started");
+    // Initialize Telegram bot service
+    const telegramService = getTelegramBotService();
+    if (config.TELEGRAM_BOT_ENABLED && config.TELEGRAM_BOT_TOKEN) {
+      try {
+        await telegramService.start();
+      } catch (error) {
+        server.log.error(error, "Failed to start Telegram bot service");
+        // Log error but don't exit - Telegram is a secondary service
+      }
+    }
   } catch (err) {
     server.log.error(err);
     process.exit(1);
@@ -319,23 +180,21 @@ async function start() {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutdown signal received");
 
-    // Stop event federation first (gracefully drains in-flight events)
-    await getEventFederationService().stop();
-    logger.info("Event federation service stopped");
-
-    // Stop outbox system first
-    await stopOutboxSystem();
-    await stopNotificationQueueWorker();
-    logger.info("Outbox system stopped");
+    // Stop Telegram bot service
+    const telegramService = getTelegramBotService();
+    if (telegramService.isRunning()) {
+      try {
+        await telegramService.stop();
+      } catch (error) {
+        logger.error(error, "Error stopping Telegram bot service");
+      }
+    }
 
     await wsServer.shutdown();
     await server.close();
     await JobQueue.getInstance().stop();
     await getSupplyVerificationQueue().stop();
     await stopWebhookWorker();
-    stopBatchReconciliationJob();
-    stopSourceDecommissionJob();
-    stopProviderCircuitBreakerJob();
     logger.info("Server closed");
     process.exit(0);
   };
