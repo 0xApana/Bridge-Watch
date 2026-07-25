@@ -455,6 +455,7 @@ export interface TrackedBalance {
   updated_at: Date;
 }
 
+
 export interface BalanceHistoryRecord {
   id: string;
   tracked_balance_id: string;
@@ -468,3 +469,35 @@ export interface BalanceHistoryRecord {
   recorded_at: Date;
   metadata: unknown | null;
 }
+
+// ─── circuit_breaker_action_configs & logs ──────────────────────────────────
+
+export type CircuitBreakerActionType = "script" | "webhook" | "contract_pause";
+export type CircuitBreakerActionStatus = "pending" | "success" | "failed";
+
+export interface CircuitBreakerActionConfig {
+  id: string;
+  name: string;
+  alert_type: string;
+  action_type: CircuitBreakerActionType;
+  config: string; // JSON string
+  enabled: boolean;
+  timeout_ms: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface CircuitBreakerActionLog {
+  id: string;
+  action_config_id: string;
+  trigger_id: string | null;
+  alert_id: string | null;
+  alert_type: string;
+  action_type: CircuitBreakerActionType;
+  status: CircuitBreakerActionStatus;
+  output: string | null;
+  error_message: string | null;
+  execution_time_ms: number;
+  executed_at: Date;
+}
+
