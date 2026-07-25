@@ -2,7 +2,7 @@ import { lazy, Suspense } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import { LoadingFallback } from "./components/LoadingFallback";
-import { GlobalErrorBoundary } from "./components/ErrorBoundary";
+import { GlobalErrorBoundary, ComponentErrorBoundary } from "./components/ErrorBoundary";
 import { NotificationProvider } from "./context/NotificationContext";
 import { useNotifications } from "./hooks/useNotifications";
 
@@ -87,7 +87,19 @@ function App() {
               <Route path="/help" element={<Help />} />
               <Route path="/release-notes" element={<ReleaseNotes />} />
               <Route path="/notification-preferences" element={<NotificationPreferencesPage />} />
-              <Route path="/relationship-explorer" element={<RelationshipExplorer />} />
+              <Route
+                path="/relationship-explorer"
+                element={
+                  <ComponentErrorBoundary
+                    severity="medium"
+                    context="relationship-explorer"
+                    title="Relationship Explorer Error"
+                    message="Unable to load the asset relationship graph. Please check your data and try again."
+                  >
+                    <RelationshipExplorer />
+                  </ComponentErrorBoundary>
+                }
+              />
               <Route path="/search" element={<SearchResultsPage />} />
               <Route path="/data-provenance" element={<DataProvenanceGraph />} />
               <Route path="/alert-sandbox" element={<AlertSimulationSandbox />} />
