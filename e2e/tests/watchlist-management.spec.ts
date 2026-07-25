@@ -12,7 +12,7 @@ test("creates a custom watchlist, adds assets, toggles active watchlist, and del
   await page.goto("/watchlists");
   
   // Wait for the page to load
-  await expect(page.locator("h1").filter({ hasText: "Watchlist Manager" })).toBeVisible();
+  await expect(page.locator("h2").filter({ hasText: "Your Watchlists" })).toBeVisible();
 
   // Create custom watchlist
   const createInput = page.getByPlaceholder("New watchlist name...");

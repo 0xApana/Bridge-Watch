@@ -1046,7 +1046,7 @@ mod tests {
         let env = setup();
         let pool_id = String::from_str(&env, "EMPTY");
         let depth = get_liquidity_depth(&env, pool_id);
-        assert_eq!(depth.depth, 0);
+        assert_eq!(depth.depth_score, 0);
     }
 
     #[test]
@@ -1071,7 +1071,7 @@ mod tests {
 
         let depth = get_liquidity_depth(&env, pool_id);
         let avg = (reserve_a + reserve_b) / 2;
-        assert_eq!(depth.depth, avg);
+        assert_eq!(depth.depth_score, avg);
     }
 
     // ── Impermanent loss tests ─────────────────────────────────────────────
