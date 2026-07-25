@@ -39,7 +39,8 @@ export type AuditAction =
   | "source.decommission_rolled_back"
   | "provider.circuit_breaker_tripped"
   | "provider.circuit_breaker_recovered"
-  | "provider.circuit_breaker_override";
+  | "provider.circuit_breaker_override"
+  | (string & {});
 
 export type AuditSeverity = "info" | "warning" | "critical";
 
@@ -47,7 +48,7 @@ export interface AuditEntry {
   id: string;
   action: AuditAction;
   actorId: string;
-  actorType: "user" | "api_key" | "system";
+  actorType: "user" | "api_key" | "system" | "admin";
   ipAddress: string | null;
   userAgent: string | null;
   resourceType: string | null;
@@ -129,7 +130,7 @@ export class AuditService {
   public async log(params: {
     action: AuditAction;
     actorId: string;
-    actorType?: "user" | "api_key" | "system";
+    actorType?: "user" | "api_key" | "system" | "admin";
     ipAddress?: string;
     userAgent?: string;
     resourceType?: string;
