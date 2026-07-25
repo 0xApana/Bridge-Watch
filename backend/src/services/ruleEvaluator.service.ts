@@ -7,20 +7,27 @@ export type ThresholdOperator =
 
 export type LogicOperator = "AND" | "OR";
 
-export interface RuleEvaluationInput {
-  ruleId?: string;
-  ruleName: string;
-  assetCode: string;
-  conditions: RuleCondition[];
-  logicOperator: LogicOperator;
-}
-
 export interface RuleCondition {
   field: string;
   operator: ThresholdOperator;
   value: number;
   valueHigh?: number;
   label?: string;
+}
+
+export type RuleASTNode =
+  | { op: "AND"; conditions: RuleASTNode[] }
+  | { op: "OR"; conditions: RuleASTNode[] }
+  | { op: "NOT"; condition: RuleASTNode }
+  | RuleCondition;
+
+export interface RuleEvaluationInput {
+  ruleId?: string;
+  ruleName: string;
+  assetCode: string;
+  conditions?: RuleCondition[];
+  logicOperator?: LogicOperator;
+  astCondition?: RuleASTNode;
 }
 
 export interface ConditionResult {
@@ -75,6 +82,87 @@ function evaluateCondition(
   }
 }
 
+function isASTGroupNode(node: RuleASTNode): node is { op: "AND" | "OR"; conditions: RuleASTNode[] } | { op: "NOT"; condition: RuleASTNode } {
+  return typeof node === "object" && node !== null && "op" in node;
+}
+
+function evaluateASTNode(
+  node: RuleASTNode,
+  metrics: Record<string, number>,
+  previousMetrics?: Record<string, number>,
+  resultsCollector?: ConditionResult[]
+): boolean {
+  if (isASTGroupNode(node)) {
+    if (node.op === "AND") {
+      return node.conditions.every((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
+    }
+    if (node.op === "OR") {
+      return node.conditions.some((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
+    }
+    if (node.op === "NOT") {
+      return !evaluateASTNode(node.condition, metrics, previousMetrics, resultsCollector);
+    }
+    return false;
+  }
+
+  // Leaf condition node
+  const actualValue = metrics[node.field] ?? 0;
+  const prevValue = previousMetrics?.[node.field];
+  const passed = evaluateCondition(node, actualValue, prevValue);
+
+  if (resultsCollector) {
+    resultsCollector.push({
+      field: node.field,
+      operator: node.operator,
+      expectedValue: node.value,
+      actualValue,
+      passed,
+      label: node.label,
+    });
+  }
+
+  return passed;
+}
+
+export function validateASTNode(node: RuleASTNode): void {
+  if (!node || typeof node !== "object") {
+    throw new Error("Invalid AST condition node");
+  }
+
+  if (isASTGroupNode(node)) {
+    if (node.op === "AND" || node.op === "OR") {
+      if (!Array.isArray(node.conditions) || node.conditions.length === 0) {
+        throw new Error(`Logical ${node.op} group requires a non-empty conditions array`);
+      }
+      for (const child of node.conditions) {
+        validateASTNode(child);
+      }
+    } else if (node.op === "NOT") {
+      if (!node.condition) {
+        throw new Error("Logical NOT group requires a child condition");
+      }
+      validateASTNode(node.condition);
+    } else {
+      throw new Error(`Unsupported logical operator: ${(node as any).op}`);
+    }
+  } else {
+    // Leaf RuleCondition
+    if (!node.field || typeof node.field !== "string" || !node.field.trim()) {
+      throw new Error("Condition field cannot be empty");
+    }
+    const validOperators: ThresholdOperator[] = ["gt", "gte", "lt", "lte", "eq", "ne", "between", "changes_by_pct"];
+    if (!validOperators.includes(node.operator)) {
+      throw new Error(`Unsupported condition operator: ${node.operator}`);
+    }
+    if (typeof node.value !== "number" || isNaN(node.value)) {
+      throw new Error("Condition value must be a valid number");
+    }
+    if (node.operator === "between" && (node.valueHigh === undefined || typeof node.valueHigh !== "number" || isNaN(node.valueHigh))) {
+      throw new Error('Condition with "between" operator requires valid valueHigh');
+    }
+  }
+}
+
 export class RuleEvaluatorService {
   private static instance: RuleEvaluatorService;
 
@@ -94,26 +182,27 @@ export class RuleEvaluatorService {
     options: boolean | EvaluationOptions = false
   ): RuleEvaluationOutput {
     const opts: EvaluationOptions = typeof options === "boolean" ? { previewMode: options } : options;
-    this.validateConditions(input.conditions);
+    
+    const conditionResults: ConditionResult[] = [];
+    let triggered = false;
+    let effectiveLogicOp: LogicOperator = input.logicOperator ?? "AND";
 
-    const conditionResults: ConditionResult[] = input.conditions.map((cond) => {
-      const actualValue = metrics[cond.field] ?? 0;
-      const prevValue = previousMetrics?.[cond.field];
-      const passed = evaluateCondition(cond, actualValue, prevValue);
-      return {
-        field: cond.field,
-        operator: cond.operator,
-        expectedValue: cond.value,
-        actualValue,
-        passed,
-        label: cond.label,
+    if (input.astCondition) {
+      validateASTNode(input.astCondition);
+      triggered = evaluateASTNode(input.astCondition, metrics, previousMetrics, conditionResults);
+      if (isASTGroupNode(input.astCondition) && (input.astCondition.op === "AND" || input.astCondition.op === "OR")) {
+        effectiveLogicOp = input.astCondition.op;
+      }
+    } else if (input.conditions !== undefined) {
+      this.validateConditions(input.conditions);
+      const astTree: RuleASTNode = {
+        op: input.logicOperator ?? "AND",
+        conditions: input.conditions,
       };
-    });
-
-    const triggered =
-      input.logicOperator === "AND"
-        ? conditionResults.every((r) => r.passed)
-        : conditionResults.some((r) => r.passed);
+      triggered = evaluateASTNode(astTree, metrics, previousMetrics, conditionResults);
+    } else {
+      throw new Error("Either conditions array or astCondition is required");
+    }
 
     const result: RuleEvaluationOutput = {
       id: crypto.randomUUID(),
@@ -121,7 +210,7 @@ export class RuleEvaluatorService {
       ruleName: input.ruleName,
       assetCode: input.assetCode,
       triggered,
-      logicOperator: input.logicOperator,
+      logicOperator: effectiveLogicOp,
       conditionResults,
       previewMode: opts.previewMode ?? false,
       evaluatedAt: new Date().toISOString(),
@@ -208,15 +297,12 @@ export class RuleEvaluatorService {
     };
   }
 
-  private validateConditions(conditions: RuleCondition[]): void {
-    if (!conditions.length) {
+  public validateConditions(conditions: RuleCondition[]): void {
+    if (!conditions || !conditions.length) {
       throw new Error("At least one condition is required");
     }
     for (const cond of conditions) {
-      if (!cond.field?.trim()) throw new Error("Condition field cannot be empty");
-      if (cond.operator === "between" && cond.valueHigh === undefined) {
-        throw new Error('Condition with "between" operator requires valueHigh');
-      }
+      validateASTNode(cond);
     }
   }
 
