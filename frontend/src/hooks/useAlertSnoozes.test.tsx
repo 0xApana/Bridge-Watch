@@ -5,7 +5,7 @@ import type { SnoozeDurationMinutes } from "./useAlertSnoozes";
 
 // Mock useLocalStorageState
 vi.mock("./useLocalStorageState", () => ({
-  useLocalStorageState: (key: string, initialValue: unknown) => {
+  useLocalStorageState: (_key: string, initialValue: unknown) => {
     let store = initialValue;
 
     const setState = (updater: any) => {

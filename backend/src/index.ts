@@ -87,6 +87,35 @@ export async function buildServer() {
   // Register lightweight usage metrics middleware (stores aggregates for queries)
   await registerUsageMetrics(server as any);
 
+  // Register RBAC Admin Audit logging hook
+  server.addHook("onResponse", async (request, reply) => {
+    if (
+      request.url.startsWith("/api/v1/admin") &&
+      ["POST", "PUT", "DELETE", "PATCH"].includes(request.method) &&
+      reply.statusCode < 400
+    ) {
+      try {
+        const { auditService } = await import("./services/audit.service.js");
+        await auditService.log({
+          action: `${request.method} ${request.url.split("?")[0]}`,
+          actorId: (request as any).user?.address || (request as any).user?.id || (request.headers["x-user-address"] as string) || "admin",
+          actorType: "admin",
+          ipAddress: request.ip,
+          userAgent: request.headers["user-agent"],
+          resourceType: "admin_endpoint",
+          resourceId: request.url,
+          metadata: {
+            method: request.method,
+            url: request.url,
+            statusCode: reply.statusCode,
+          },
+        });
+      } catch (err) {
+        logger.error({ err }, "Failed to log admin audit entry in onResponse hook");
+      }
+    }
+  });
+
   // Register plugins
   const corsOrigin = config.NODE_ENV === "production"
     ? (config as any).CORS_ALLOWED_ORIGINS
