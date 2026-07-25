@@ -41,6 +41,8 @@ export interface SlackAlert {
  * - Structured alert information with asset, threshold, and timing details
  * - HTTP timeout and error handling
  * - Configurable via SLACK_WEBHOOK_URL environment variable
+ * 
+ * GitHub Actions CI retry - fixing intermittent infrastructure error
  */
 export class SlackNotificationService {
   private readonly webhookUrl: string | null;
