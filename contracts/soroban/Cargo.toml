@@ -41,3 +41,7 @@ path = "tests/threshold_window.test.rs"
 [[test]]
 name = "acl_test"
 path = "tests/acl.test.rs"
+
+[[test]]
+name = "fee_distribution_test"
+path = "tests/fee_distribution_test.rs"
