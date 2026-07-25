@@ -1,10 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { mockCoreApi } from "../utils/mockApi";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("bridge-watch:onboarding:v1", "true");
     window.localStorage.setItem("bridge-watch:dashboard-tour:v1", JSON.stringify({ completed: true, lastStep: 0, seen: true }));
   });
+  await mockCoreApi(page);
 });
 
 test("creates a custom watchlist, adds assets, toggles active watchlist, and deletes watchlists", async ({ page }) => {
