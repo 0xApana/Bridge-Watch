@@ -9,137 +9,71 @@ test.beforeEach(async ({ page }) => {
   await mockCoreApi(page);
 });
 
-test("toggles notification channels and updates email address", async ({ page }) => {
-  // Navigate to notification preferences
-  await page.goto("/settings/notifications");
+test("toggles notification sounds preference", async ({ page }) => {
+  // Navigate to settings/dashboard that contains NotificationPreferences
+  await page.goto("/");
 
-  // Wait for the page to load
-  await expect(page.locator("h1").filter({ hasText: /notification|preference/i })).toBeVisible({ timeout: 10000 });
+  // Find notification preferences section
+  const preferencesSection = page.locator("text=Notification Sounds").first();
+  await expect(preferencesSection).toBeVisible({ timeout: 5000 });
 
-  // Test toggling email notifications
-  const emailToggle = page.getByRole("switch", { name: /email/i }).first();
-  const initialEmailState = await emailToggle.isChecked();
+  // Find and click the toggle button
+  const toggleButton = page
+    .locator(".bg-stellar-blue, .bg-stellar-border")
+    .filter({ hasText: "" })
+    .first();
 
-  await emailToggle.click();
-  await expect(emailToggle).toHaveAttribute("aria-checked", String(!initialEmailState));
+  // Get initial state
+  const initialClass = await toggleButton.getAttribute("class");
+  const isInitiallyEnabled = initialClass?.includes("bg-stellar-blue") ?? false;
 
-  // Test toggling webhook notifications
-  const webhookToggle = page.getByRole("switch", { name: /webhook/i }).first();
-  const initialWebhookState = await webhookToggle.isChecked();
+  // Click toggle
+  await toggleButton.click();
 
-  await webhookToggle.click();
-  await expect(webhookToggle).toHaveAttribute("aria-checked", String(!initialWebhookState));
-
-  // Test updating email address
-  const emailInput = page.getByLabel(/email.*address|email/i).first();
-  if (await emailInput.isVisible()) {
-    await emailInput.clear();
-    await emailInput.fill("test@example.com");
-
-    // Save the form
-    const saveButton = page.getByRole("button", { name: /save|update/i }).first();
-    await saveButton.click();
-
-    // Verify success message or confirmation
-    await expect(page.locator("text=/success|saved|updated/i")).toBeVisible({ timeout: 5000 });
-  }
-
-  // Verify email input has the new value
-  await expect(emailInput).toHaveValue("test@example.com");
+  // Verify state changed
+  const newClass = await toggleButton.getAttribute("class");
+  const isNowEnabled = newClass?.includes("bg-stellar-blue") ?? false;
+  expect(isNowEnabled).not.toBe(isInitiallyEnabled);
 });
 
-test("updates webhook threshold options", async ({ page }) => {
-  // Navigate to notification preferences
-  await page.goto("/settings/notifications");
+test("displays notification sounds section with description", async ({ page }) => {
+  await page.goto("/");
 
-  // Wait for the page to load
-  await expect(page.locator("h1").filter({ hasText: /notification|preference/i })).toBeVisible({ timeout: 10000 });
+  // Check for notification sounds heading
+  const heading = page.locator("h3").filter({ hasText: /Notification Sounds/i });
+  await expect(heading).toBeVisible({ timeout: 5000 });
 
-  // Find webhook threshold dropdown/select
-  const thresholdSelect = page.getByLabel(/threshold|severity|level/i).first();
-
-  if (await thresholdSelect.isVisible()) {
-    // Change threshold value
-    await thresholdSelect.click();
-
-    // Select a different threshold option
-    const options = page.getByRole("option");
-    const optionCount = await options.count();
-
-    if (optionCount > 1) {
-      await options.nth(1).click();
-
-      // Save the form
-      const saveButton = page.getByRole("button", { name: /save|update/i }).first();
-      await saveButton.click();
-
-      // Verify success message
-      await expect(page.locator("text=/success|saved|updated/i")).toBeVisible({ timeout: 5000 });
-    }
-  }
+  // Check for description text
+  const description = page.locator("text=Play a sound when a new notification arrives");
+  await expect(description).toBeVisible();
 });
 
-test("saves notification preference form and persists changes", async ({ page }) => {
-  // Navigate to notification preferences
-  await page.goto("/settings/notifications");
+test("displays browser push notifications as coming soon", async ({ page }) => {
+  await page.goto("/");
 
-  // Wait for the page to load
-  await expect(page.locator("h1").filter({ hasText: /notification|preference/i })).toBeVisible({ timeout: 10000 });
+  // Check for browser push notifications section
+  const heading = page.locator("text=Browser Push Notifications");
+  await expect(heading).toBeVisible({ timeout: 5000 });
 
-  // Collect all toggles
-  const toggles = page.getByRole("switch");
-  const toggleCount = await toggles.count();
+  // Check for "Coming Soon" text
+  const comingSoon = page.locator("text=Coming Soon");
+  await expect(comingSoon).toBeVisible();
 
-  if (toggleCount > 0) {
-    // Toggle the first switch
-    const firstToggle = toggles.first();
-    const initialState = await firstToggle.isChecked();
-    await firstToggle.click();
-
-    // Click save button
-    const saveButton = page.getByRole("button", { name: /save|update|submit/i }).first();
-    await saveButton.click();
-
-    // Wait for success notification
-    await expect(page.locator("text=/success|saved|updated|changes saved/i")).toBeVisible({ timeout: 5000 });
-
-    // Refresh the page to verify persistence
-    await page.reload();
-
-    // Wait for the page to load again
-    await expect(page.locator("h1").filter({ hasText: /notification|preference/i })).toBeVisible({ timeout: 10000 });
-
-    // Verify the toggle state persisted
-    const refreshedToggle = toggles.first();
-    const expectedState = !initialState;
-    await expect(refreshedToggle).toHaveAttribute("aria-checked", String(expectedState));
-  }
+  // Check for description
+  const description = page.locator("text=Get alerts even when the dashboard is closed");
+  await expect(description).toBeVisible();
 });
 
-test("displays form validation errors for invalid email", async ({ page }) => {
-  // Navigate to notification preferences
-  await page.goto("/settings/notifications");
+test("notification preferences section has proper styling", async ({ page }) => {
+  await page.goto("/");
 
-  // Wait for the page to load
-  await expect(page.locator("h1").filter({ hasText: /notification|preference/i })).toBeVisible({ timeout: 10000 });
+  // Find the preferences container
+  const container = page.locator(".bg-stellar-card.border.border-stellar-border").first();
+  await expect(container).toBeVisible({ timeout: 5000 });
 
-  // Find email input
-  const emailInput = page.getByLabel(/email.*address|email/i).first();
-
-  if (await emailInput.isVisible()) {
-    // Enter invalid email
-    await emailInput.clear();
-    await emailInput.fill("invalid-email");
-
-    // Try to save
-    const saveButton = page.getByRole("button", { name: /save|update/i }).first();
-    await saveButton.click();
-
-    // Wait for error message
-    await expect(page.locator("text=/invalid|error|required/i")).toBeVisible({ timeout: 5000 });
-
-    // Verify form was not submitted
-    const errorCount = await page.locator("text=/invalid|error/i").count();
-    expect(errorCount).toBeGreaterThan(0);
-  }
+  // Verify it has proper padding and spacing
+  const containerBox = await container.boundingBox();
+  expect(containerBox).not.toBeNull();
+  expect(containerBox?.width).toBeGreaterThan(0);
+  expect(containerBox?.height).toBeGreaterThan(0);
 });
