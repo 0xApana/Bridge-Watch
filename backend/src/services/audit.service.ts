@@ -40,6 +40,7 @@ export type AuditAction =
   | "provider.circuit_breaker_tripped"
   | "provider.circuit_breaker_recovered"
   | "provider.circuit_breaker_override"
+  // eslint-disable-next-line @typescript-eslint/ban-types
   | (string & {});
 
 export type AuditSeverity = "info" | "warning" | "critical";

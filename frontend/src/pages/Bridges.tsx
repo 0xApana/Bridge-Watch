@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Suspense, useMemo, useRef, useEffect, useState } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useBridges } from "../hooks/useBridges";
