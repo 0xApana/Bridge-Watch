@@ -11,7 +11,7 @@ test.beforeEach(async ({ page }) => {
 
 test("creates a custom watchlist, adds assets, toggles active watchlist, and deletes watchlists", async ({ page }) => {
   // Go to watchlists manager page
-  await page.goto("/watchlists");
+  await page.goto("/watchlist");
   
   // Wait for the page to load
   await expect(page.locator("h2").filter({ hasText: "Your Watchlists" })).toBeVisible();
@@ -21,21 +21,21 @@ test("creates a custom watchlist, adds assets, toggles active watchlist, and del
   await createInput.fill("My Custom Watchlist");
   await page.getByRole("button", { name: "Create" }).click();
 
-  // Wait for the new watchlist to appear in the list
-  await expect(page.getByText("My Custom Watchlist")).toBeVisible();
+  // Wait for the new watchlist to appear in the list (using h3 to target the manager specifically)
+  await expect(page.locator("h3").filter({ hasText: "My Custom Watchlist" })).toBeVisible();
   
-  // Navigate to an asset to add it to the watchlist
-  await page.goto("/assets");
+  // Navigate to the dashboard to add an asset to the watchlist
+  await page.goto("/dashboard");
   
   // The active watchlist should be the new one by default, let's verify adding an asset
   const firstAssetWatchlistButton = page.locator('button[aria-label^="Add"]').first();
   await firstAssetWatchlistButton.click();
   
   // Go back to watchlists
-  await page.goto("/watchlists");
+  await page.goto("/watchlist");
   
-  // Verify it's in the list or toggle active
-  const watchlistRow = page.locator("div.border-stellar-border").filter({ hasText: "My Custom Watchlist" });
+  // Verify it's in the list or toggle active (target the specific manager row)
+  const watchlistRow = page.locator("div.p-4").filter({ has: page.locator("h3", { hasText: "My Custom Watchlist" }) });
   await expect(watchlistRow).toBeVisible();
   
   // Click set active
@@ -52,5 +52,5 @@ test("creates a custom watchlist, adds assets, toggles active watchlist, and del
   await deleteBtn.click();
   
   // Verify it was deleted
-  await expect(page.getByText("My Custom Watchlist")).not.toBeVisible();
+  await expect(page.locator("h3").filter({ hasText: "My Custom Watchlist" })).not.toBeVisible();
 });
