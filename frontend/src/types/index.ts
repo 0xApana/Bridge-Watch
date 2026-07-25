@@ -12,7 +12,7 @@ export interface HealthFactors {
 }
 
 export interface HealthScore {
-  symbol: string;
+  symbol?: string;
   overallScore: number;
   factors: HealthFactors;
   trend: "improving" | "stable" | "deteriorating";
@@ -405,6 +405,49 @@ export interface DependencyGraph {
   }>;
   edges: Array<{ from: string; to: string; kind: string }>;
 }
+
+export type RuleThresholdOperator = "gt" | "gte" | "lt" | "lte" | "eq" | "neq" | "between";
+export type RuleLogicOperator = "AND" | "OR";
+export type RulePriority = "low" | "medium" | "high" | "critical";
+export type AlertRuleStatus = "active" | "paused" | "disabled";
+
+export interface RuleCondition {
+  metric: string;
+  operator: RuleThresholdOperator;
+  threshold: number;
+  thresholdHigh?: number;
+  label?: string;
+}
+
+export interface AlertRule {
+  id: string;
+  ownerAddress: string;
+  name: string;
+  description?: string | null;
+  assetCode: string;
+  conditions: RuleCondition[];
+  logicOperator: RuleLogicOperator;
+  priority: RulePriority;
+  status: AlertRuleStatus;
+  cooldownSeconds: number;
+  timeWindow?: string | null;
+  version?: number;
+  templateId?: string | null;
+  webhookUrl?: string | null;
+  lastTriggeredAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Alert {
+  id: string;
+  type: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  createdAt: string;
+}
+
+export type AssetAlert = Alert;
 
 export type AlertRoutingSeverity = "critical" | "high" | "medium" | "low";
 export type AlertRoutingChannel = "in_app" | "webhook" | "email";
