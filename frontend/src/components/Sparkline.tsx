@@ -16,6 +16,8 @@ import {
 
 type TrendDirection = "up" | "down" | "flat";
 
+const SPARKLINE_SKELETON_HEIGHT = 32;
+
 function stellarVarRgb(varName: string, fallbackRgb: string): string {
   try {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -148,8 +150,16 @@ function SparklineImpl({
 
   return (
     <div ref={ref} style={{ width }} aria-label={ariaLabel}>
-      <div style={{ height }}>
-        {emptyState ? (
+      <div style={{ height }} className="flex items-center">
+        {isLoading ? (
+          <div
+            className="skeleton w-full rounded bg-stellar-border/40"
+            style={{ height: SPARKLINE_SKELETON_HEIGHT }}
+            role="status"
+            aria-busy="true"
+            aria-label="Loading sparkline"
+          />
+        ) : emptyState ? (
           <div
             className="w-full h-full bg-stellar-border/30 rounded"
             aria-hidden="true"
