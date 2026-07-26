@@ -10,6 +10,7 @@
  * All prices are quoted in USD.
  */
 
+import Decimal from "decimal.js";
 import { redis } from "../../utils/redis.js";
 import { logger } from "../../utils/logger.js";
 import { withRetry } from "../../utils/retry.js";
@@ -235,20 +236,24 @@ export class DexSource {
             300
           );
 
-          const bid = parseFloat(book.bids?.[0]?.price ?? "0");
-          const ask = parseFloat(book.asks?.[0]?.price ?? "0");
+          const bidStr = book.bids?.[0]?.price ?? "0";
+          const askStr = book.asks?.[0]?.price ?? "0";
+          const bid = new Decimal(bidStr);
+          const ask = new Decimal(askStr);
 
-          if (!bid && !ask) return;
+          if (bid.isZero() && ask.isZero()) return;
 
           // Mid-price in XLM/asset; convert to USD using live XLM/USD rate.
-          const xlmUsd = await this.fetchXlmUsd();
-          const midXlm = bid && ask ? (bid + ask) / 2 : bid || ask;
-          const priceUsd = midXlm > 0 ? (1 / midXlm) * xlmUsd : 0;
+          const xlmUsd = new Decimal(await this.fetchXlmUsd());
+          const midXlm = bid.isPositive() && ask.isPositive()
+            ? bid.plus(ask).div(2)
+            : bid.isPositive() ? bid : ask;
+          const priceUsd = midXlm.isPositive() ? xlmUsd.div(midXlm) : new Decimal(0);
 
-          if (priceUsd > 0) {
+          if (priceUsd.isPositive()) {
             results.push({
               symbol,
-              price: priceUsd,
+              price: priceUsd.toNumber(),
               dex: "Stellar DEX",
               source: SOURCE_NAME,
             });
@@ -278,16 +283,20 @@ export class DexSource {
 
     try {
       const book = await fetchJson<{ bids: { price: string }[]; asks: { price: string }[] }>(horizonUrl);
-      const bid = parseFloat(book.bids?.[0]?.price ?? "0");
-      const ask = parseFloat(book.asks?.[0]?.price ?? "0");
-      const mid = bid && ask ? (bid + ask) / 2 : bid || ask;
-      if (mid > 0) {
-        const xlmUsd = 1 / mid;
+      const bidStr = book.bids?.[0]?.price ?? "0";
+      const askStr = book.asks?.[0]?.price ?? "0";
+      const bid = new Decimal(bidStr);
+      const ask = new Decimal(askStr);
+      const mid = bid.isPositive() && ask.isPositive()
+        ? bid.plus(ask).div(2)
+        : bid.isPositive() ? bid : ask;
+      if (mid.isPositive()) {
+        const xlmUsd = new Decimal(1).div(mid);
         await Promise.all([
-          redis.set(cacheKey, String(xlmUsd), "EX", 30).catch(() => undefined),
-          redis.set(`${cacheKey}:stale`, String(xlmUsd), "EX", 3600).catch(() => undefined),
+          redis.set(cacheKey, xlmUsd.toString(), "EX", 30).catch(() => undefined),
+          redis.set(`${cacheKey}:stale`, xlmUsd.toString(), "EX", 3600).catch(() => undefined),
         ]);
-        return xlmUsd;
+        return xlmUsd.toNumber();
       }
     } catch {
       logger.warn("Stellar DEX XLM/USD fetch failed, falling back to Binance");
