@@ -1,8 +1,19 @@
+import { timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { getDatabase } from "../../database/connection.js";
 import { OutboxAdminApi } from "../../outbox/adminApi.js";
 import { logger } from "../../utils/logger.js";
+
+function constantTimeEquals(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) {
+    timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
 
 // Validation schemas
 const RetryEventSchema = z.object({
@@ -29,16 +40,14 @@ export async function outboxAdminRoutes(fastify: FastifyInstance) {
 
   // Add authentication middleware for admin routes
   fastify.addHook("preHandler", async (request, reply) => {
-    // TODO: Implement proper admin authentication
-    // For now, this is a placeholder - in production you'd check API keys, JWT tokens, etc.
     const authHeader = request.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return reply.code(401).send({ error: "Unauthorized" });
     }
-    
-    // Simple token validation (replace with proper auth)
+
+    const adminToken = process.env.ADMIN_API_TOKEN;
     const token = authHeader.substring(7);
-    if (token !== process.env.ADMIN_API_TOKEN) {
+    if (!adminToken || !constantTimeEquals(token, adminToken)) {
       return reply.code(401).send({ error: "Invalid token" });
     }
   });
