@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useNotificationLiveUpdates } from "../hooks/useNotificationLiveUpdates";
 import { useWatchlist } from "../hooks/useWatchlist";
-import { selectUnreadCount, useNotificationStore } from "../stores/notificationStore";
+import {
+  selectCriticalCount,
+  selectUnreadCount,
+  useNotificationStore,
+} from "../stores/notificationStore";
 import EntitySwitcher from "./EntitySwitcher";
 import HamburgerButton from "./MobileNav/HamburgerButton";
 import MobileMenu from "./MobileNav/MobileMenu";
@@ -21,6 +25,7 @@ export default function Navbar() {
   const notificationTriggerRef = useRef<HTMLButtonElement | null>(null);
   const previousDrawerOpen = useRef(false);
   const unreadCount = useNotificationStore(selectUnreadCount);
+  const criticalCount = useNotificationStore(selectCriticalCount);
 
   useNotificationLiveUpdates();
 
@@ -126,6 +131,22 @@ export default function Navbar() {
                   />
                 </svg>
                 <UnreadCountBadge unreadCount={unreadCount} />
+                {criticalCount > 0 && (
+                  <span
+                    className="absolute top-1 left-1 flex h-2.5 w-2.5"
+                    role="status"
+                    aria-label={`${criticalCount} unacknowledged critical alerts`}
+                  >
+                    <span
+                      className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"
+                      aria-hidden="true"
+                    />
+                    <span
+                      className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"
+                      aria-hidden="true"
+                    />
+                  </span>
+                )}
               </button>
 
               <HamburgerButton

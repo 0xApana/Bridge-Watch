@@ -1,13 +1,14 @@
 import { randomUUID } from "crypto";
+import { config } from "../config/index.js";
 
-const MAX_HISTORY_PER_TOPIC = 50;
-const MAX_HISTORY_AGE_MS = 5 * 60 * 1000;
-const BATCH_INTERVAL_MS = 120;
-const MAX_BATCH_SIZE = 20;
-const MESSAGE_RATE_LIMIT_WINDOW_MS = 1000;
-const MAX_MESSAGES_PER_WINDOW = 20;
-const HEARTBEAT_INTERVAL_MS = 30_000;
-const HEARTBEAT_TIMEOUT_MS = 10_000;
+const MAX_HISTORY_PER_TOPIC = config.WS_MAX_HISTORY_PER_TOPIC;
+const MAX_HISTORY_AGE_MS = config.WS_MAX_HISTORY_AGE_MS;
+const BATCH_INTERVAL_MS = config.WS_BATCH_INTERVAL_MS;
+const MAX_BATCH_SIZE = config.WS_MAX_BATCH_SIZE;
+const MESSAGE_RATE_LIMIT_WINDOW_MS = config.WS_RATE_LIMIT_WINDOW_MS;
+const MAX_MESSAGES_PER_WINDOW = config.WS_RATE_LIMIT_MAX_MESSAGES;
+const HEARTBEAT_INTERVAL_MS = config.WS_HEARTBEAT_INTERVAL_MS;
+const HEARTBEAT_TIMEOUT_MS = config.WS_HEARTBEAT_TIMEOUT_MS;
 
 export type WebsocketMessageType =
   | "price_update"
