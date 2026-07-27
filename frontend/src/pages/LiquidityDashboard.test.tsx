@@ -75,4 +75,11 @@ describe("LiquidityDashboard", () => {
     renderPage();
     expect(screen.getByTestId("depth-chart")).toBeInTheDocument();
   });
+
+  it("renders an enabled Export CSV button when depth data is available", () => {
+    renderPage();
+    const button = screen.getByRole("button", { name: /export csv/i });
+    expect(button).toBeInTheDocument();
+    expect(button).not.toBeDisabled();
+  });
 });
