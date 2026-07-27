@@ -18,6 +18,7 @@
     "build:sdk": "npm run build --workspace=sdk",
     "test": "npm run test --workspaces --if-present",
     "test:backend": "npm run test --workspace=backend",
+    "test:prometheus-alerts": "bash scripts/validate-prometheus-alerts.sh",
     "test:sdk": "npm run test --workspace=sdk",
     "coverage": "node scripts/coverage.mjs",
     "coverage:combine": "node scripts/coverage.mjs",
