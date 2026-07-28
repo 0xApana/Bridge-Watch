@@ -613,6 +613,37 @@ export function deleteAlertRoutingRule(apiKey: string, id: string) {
   );
 }
 
+export async function bulkUpdateAlertRoutingRules(
+  apiKey: string,
+  ruleIds: string[],
+  isActive: boolean
+): Promise<{ rules: AlertRoutingRule[]; count: number }> {
+  try {
+    return await fetchApi<{ rules: AlertRoutingRule[]; count: number }>(
+      "/admin/alert-routing/rules/bulk",
+      {
+        method: "PATCH",
+        body: JSON.stringify({ ruleIds, isActive }),
+      },
+      apiKey
+    );
+  } catch {
+    const updated = await Promise.all(
+      ruleIds.map((id) => updateAlertRoutingRule(apiKey, id, { isActive }))
+    );
+    return { rules: updated.map((res) => res.rule), count: updated.length };
+  }
+}
+
+export const AlertService = {
+  listRules: listAlertRoutingRules,
+  createRule: createAlertRoutingRule,
+  updateRule: updateAlertRoutingRule,
+  bulkUpdateRules: bulkUpdateAlertRoutingRules,
+  deleteRule: deleteAlertRoutingRule,
+  getAudit: getAlertRoutingAudit,
+};
+
 export function getAlertRoutingAudit(
   apiKey: string,
   options?: {

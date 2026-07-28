@@ -1,0 +1,105 @@
+groups:
+  - name: bridge-watch-availability
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: up{job="bridge-watch-backend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: backend
+          team: platform
+        annotations:
+          summary: "Bridge Watch backend is down"
+          description: "Prometheus cannot scrape backend metrics for more than 2 minutes."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#backenddown"
+
+      - alert: UptimeProbeFailed
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: uptime
+          team: platform
+        annotations:
+          summary: "Uptime probe failed"
+          description: "Probe failed for {{ $labels.instance }}."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#uptimeprobefailed"
+
+  - name: bridge-watch-resources
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          service: infrastructure
+          team: platform
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is above 85% on {{ $labels.instance }}."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#highcpuusage"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 10m
+        labels:
+          severity: warning
+          service: infrastructure
+          team: platform
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 90% on {{ $labels.instance }}."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#highmemoryusage"
+
+  - name: bridge-watch-application
+    interval: 30s
+    rules:
+      - alert: HighHTTPErrorRate
+        expr: sum(rate(http_requests_total{status_code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          service: backend
+          team: api
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "HTTP 5xx rate is above 5% over 5 minutes."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#highhttperrorrate"
+
+      - alert: HighP95Latency
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 2
+        for: 10m
+        labels:
+          severity: warning
+          service: backend
+          team: api
+        annotations:
+          summary: "High p95 latency"
+          description: "HTTP p95 latency is above 2s for 10 minutes."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#highp95latency"
+
+      - alert: BridgeHealthLow
+        expr: bridge_health_score < 80
+        for: 10m
+        labels:
+          severity: critical
+          service: bridge
+          team: bridge
+        annotations:
+          summary: "Bridge health score low"
+          description: "{{ $labels.bridge_name }} health score dropped below 80."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#bridgehealthlow"
+
+      - alert: BullQueueFailedGrowingRapidly
+        expr: rate(bull_queue_failed_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          service: backend
+          team: platform
+        annotations:
+          summary: "BullMQ failed jobs growing rapidly"
+          description: "The rate of failed jobs in queue {{ $labels.queue_name }} is increasing rapidly."
+          runbook_url: "https://github.com/StellaBridge/Bridge-Watch/blob/main/monitoring/runbooks/critical-alerts.md#bullqueuefailedgrowingrapidly"

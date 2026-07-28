@@ -265,6 +265,17 @@ export class AlertRoutingService {
     return mapRowToRule(row as Record<string, unknown>);
   }
 
+  async bulkUpdateRules(ids: string[], isActive: boolean): Promise<AlertRoutingRule[]> {
+    if (!ids || ids.length === 0) return [];
+    const db = getDatabase();
+    const rows = await db("alert_routing_rules")
+      .whereIn("id", ids)
+      .update({ is_active: isActive, updated_at: new Date() })
+      .returning("*");
+
+    return (rows ?? []).map((row: Record<string, unknown>) => mapRowToRule(row));
+  }
+
   async deleteRule(id: string): Promise<boolean> {
     const db = getDatabase();
     const deleted = await db("alert_routing_rules").where({ id }).delete();

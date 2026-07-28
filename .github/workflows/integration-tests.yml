@@ -62,6 +62,8 @@ jobs:
         with:
           node-version: 20
       - run: npm ci
+      - name: Validate Prometheus Alert Rules
+        run: docker run --rm --entrypoint promtool -v ${{ github.workspace }}:/work prom/prometheus:v2.54.1 check rules /work/monitoring/prometheus-alerts.yml
       - name: Run integration tests
         run: npm --workspace=backend run test:integration
         continue-on-error: true
