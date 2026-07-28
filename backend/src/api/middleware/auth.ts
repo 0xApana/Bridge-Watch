@@ -87,26 +87,32 @@ export function authMiddleware(options: AuthOptions = {}) {
 
     if (apiKey) {
       try {
-        const validated = await apiKeyService.validateKey(
+        const outcome = await apiKeyService.validateKey(
           apiKey,
           options.requiredScopes ?? [],
           request.ip
         );
 
-        if (!validated) {
-          return reply.status(403).send({
-            error: "Forbidden",
-            message: "Invalid API key or missing required scope.",
+        if (outcome.ok === false) {
+          if (outcome.reason === "insufficient_scope") {
+            return reply.status(403).send({
+              error: "Forbidden",
+              message: "API key does not have the required scope.",
+            });
+          }
+          return reply.status(401).send({
+            error: "Unauthorized",
+            message: "Invalid or unrecognized API key.",
           });
         }
 
-        request.apiKeyAuth = validated;
+        request.apiKeyAuth = outcome.result;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Failed to validate API key";
-        const statusCode = message.includes("rate limit") ? 429 : 403;
+        const statusCode = message.includes("rate limit") ? 429 : 401;
         return reply.status(statusCode).send({
-          error: statusCode === 429 ? "Too Many Requests" : "Forbidden",
+          error: statusCode === 429 ? "Too Many Requests" : "Unauthorized",
           message,
         });
       }

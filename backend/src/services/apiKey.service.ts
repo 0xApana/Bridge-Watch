@@ -53,6 +53,12 @@ interface ApiKeyValidationResult {
   source: "api-key" | "bootstrap";
 }
 
+export type ApiKeyValidationFailureReason = "invalid_key" | "insufficient_scope";
+
+export type ApiKeyValidationOutcome =
+  | { ok: true; result: ApiKeyValidationResult }
+  | { ok: false; reason: ApiKeyValidationFailureReason };
+
 interface ApiKeyRepository {
   create(record: StoredApiKeyRecord): Promise<void>;
   update(record: StoredApiKeyRecord): Promise<void>;
@@ -430,15 +436,18 @@ export class ApiKeyService {
     plaintextKey: string,
     requiredScopes: string[] = [],
     clientIp?: string
-  ): Promise<ApiKeyValidationResult | null> {
+  ): Promise<ApiKeyValidationOutcome> {
     const bootstrapToken = config.API_KEY_BOOTSTRAP_TOKEN;
     if (bootstrapToken && plaintextKey === bootstrapToken) {
       return {
-        id: "bootstrap",
-        name: "Bootstrap admin token",
-        scopes: ["*"],
-        rateLimitPerMinute: Number.MAX_SAFE_INTEGER,
-        source: "bootstrap",
+        ok: true,
+        result: {
+          id: "bootstrap",
+          name: "Bootstrap admin token",
+          scopes: ["*"],
+          rateLimitPerMinute: Number.MAX_SAFE_INTEGER,
+          source: "bootstrap",
+        },
       };
     }
 
@@ -455,7 +464,7 @@ export class ApiKeyService {
       }
 
       if (!this.hasScopes(candidate.scopes, requiredScopes)) {
-        return null;
+        return { ok: false, reason: "insufficient_scope" };
       }
 
       if (!this.consumeRateLimit(candidate.id, candidate.rateLimitPerMinute)) {
@@ -470,15 +479,18 @@ export class ApiKeyService {
       await this.log(candidate.id, "used", candidate.name, clientIp ?? null);
 
       return {
-        id: candidate.id,
-        name: candidate.name,
-        scopes: candidate.scopes,
-        rateLimitPerMinute: candidate.rateLimitPerMinute,
-        source: "api-key",
+        ok: true,
+        result: {
+          id: candidate.id,
+          name: candidate.name,
+          scopes: candidate.scopes,
+          rateLimitPerMinute: candidate.rateLimitPerMinute,
+          source: "api-key",
+        },
       };
     }
 
-    return null;
+    return { ok: false, reason: "invalid_key" };
   }
 
   private getDefaultRepository(): ApiKeyRepository {
