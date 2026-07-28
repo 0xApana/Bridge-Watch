@@ -131,6 +131,22 @@ const envSchema = z.object({
    * any token is rejected.  Set this to a strong random string in production.
    */
   WS_AUTH_SECRET: z.string().optional(),
+  // Interval between heartbeat pings sent to connected clients (ms)
+  WS_HEARTBEAT_INTERVAL_MS: z.coerce.number().default(30_000),
+  // Grace period after a missed pong before a connection is terminated (ms)
+  WS_HEARTBEAT_TIMEOUT_MS: z.coerce.number().default(10_000),
+  // How often queued messages are flushed to clients (ms)
+  WS_BATCH_INTERVAL_MS: z.coerce.number().default(120),
+  // Max messages delivered per batch / replay
+  WS_MAX_BATCH_SIZE: z.coerce.number().default(20),
+  // Sliding window used for per-client outbound rate limiting (ms)
+  WS_RATE_LIMIT_WINDOW_MS: z.coerce.number().default(1000),
+  // Max messages allowed per client within WS_RATE_LIMIT_WINDOW_MS
+  WS_RATE_LIMIT_MAX_MESSAGES: z.coerce.number().default(20),
+  // Max messages retained per topic for replay
+  WS_MAX_HISTORY_PER_TOPIC: z.coerce.number().default(50),
+  // Max age of a retained replay message before it expires (ms)
+  WS_MAX_HISTORY_AGE_MS: z.coerce.number().default(5 * 60 * 1000),
 
   // Health Score Weights
   HEALTH_WEIGHT_LIQUIDITY: z.coerce.number().default(0.25),

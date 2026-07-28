@@ -236,16 +236,16 @@ export default function HealthScoreCard({
               return (
                 <div
                   key={key}
-                  className="flex items-center justify-between gap-2"
+                  className="grid grid-cols-1 gap-1 xs:flex xs:items-center xs:justify-between xs:gap-2"
                   role="listitem"
                   aria-label={`${FACTOR_LABELS[key]}: ${value} out of 100`}
                 >
-                  <span className="text-sm text-stellar-text-secondary flex-shrink-0">
+                  <span className="text-sm text-stellar-text-secondary xs:flex-shrink-0">
                     {FACTOR_LABELS[key]}
                   </span>
-                  <div className="flex items-center gap-2 flex-1 justify-end">
+                  <div className="flex items-center gap-2 xs:flex-1 xs:justify-end">
                     <div
-                      className="w-20 h-1.5 bg-stellar-border rounded-full overflow-hidden"
+                      className="flex-1 xs:w-20 xs:flex-none h-1.5 bg-stellar-border rounded-full overflow-hidden"
                       role="progressbar"
                       aria-valuenow={value}
                       aria-valuemin={0}
