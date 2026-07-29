@@ -2,6 +2,7 @@ import { redis } from "../utils/redis.js";
 import { logger } from "../utils/logger.js";
 import type { RateLimitTier, EndpointCategory } from "../api/middleware/rateLimit.middleware.js";
 import { getRateLimitMetrics } from "../api/middleware/rateLimit.middleware.js";
+import { externalRateLimitMetricsService } from "./externalRateLimitMetrics.service.js";
 
 export interface RateLimitStats {
   totalRequests: number;
@@ -273,6 +274,64 @@ export class RateLimitService {
       
       return rows.join("\n");
     }
+  }
+
+  /**
+   * Helper method to compute external rate-limit metrics against real rate-limit data structure.
+   * Calculates total requests, blocked requests, usage percentages, and throttling status.
+   */
+  async computeExternalRateLimitMetrics(options?: {
+    providerKey?: string;
+    timeRange?: "1h" | "24h" | "7d";
+  }): Promise<{
+    providerKey?: string;
+    totalRequests: number;
+    blockedRequests: number;
+    throttledCount: number;
+    burstCount: number;
+    usagePercent: number | null;
+    isThrottled: boolean;
+    tierDistribution: Record<RateLimitTier, number>;
+  }> {
+    const timeRange = options?.timeRange ?? "24h";
+    const stats = await this.getRateLimitStats(timeRange);
+
+    let providerKey = options?.providerKey;
+    let throttledCount = 0;
+    let burstCount = 0;
+    let usagePercent: number | null = null;
+    let isThrottled = false;
+
+    if (providerKey) {
+      try {
+        const snapshots = await externalRateLimitMetricsService.getProviderSnapshots();
+        const providerSnap = snapshots.find((s) => s.providerKey === providerKey);
+        if (providerSnap) {
+          throttledCount = providerSnap.throttledCount;
+          burstCount = providerSnap.burstCount;
+          usagePercent = providerSnap.usagePercent;
+          isThrottled = providerSnap.isThrottled;
+        }
+      } catch (err) {
+        logger.warn({ err, providerKey }, "Failed to fetch provider snapshot for external rate limit metrics");
+      }
+    }
+
+    if (usagePercent === null && stats.totalRequests > 0) {
+      const limit = this.config.globalLimits.requestsPerSecond * (this.getTimeRangeMs(timeRange) / 1000);
+      usagePercent = Math.min(100, Math.round((stats.totalRequests / limit) * 100));
+    }
+
+    return {
+      ...(providerKey ? { providerKey } : {}),
+      totalRequests: stats.totalRequests,
+      blockedRequests: stats.blockedRequests,
+      throttledCount,
+      burstCount,
+      usagePercent,
+      isThrottled,
+      tierDistribution: stats.tierDistribution,
+    };
   }
 
   // Private helper methods

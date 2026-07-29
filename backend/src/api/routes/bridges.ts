@@ -49,7 +49,7 @@ export async function bridgesRoutes(server: FastifyInstance) {
     },
   );
 
-  server.get<{ Params: { bridge: string } }>(
+  server.get<{ Params: { bridge: string }; Querystring: { startDate?: string; endDate?: string } }>(
     "/:bridge/stats",
     {
       schema: {
@@ -60,6 +60,13 @@ export async function bridgesRoutes(server: FastifyInstance) {
           properties: { bridge: { type: "string", description: "Bridge identifier", example: "allbridge" } },
           required: ["bridge"],
         },
+        querystring: {
+          type: "object",
+          properties: {
+            startDate: { type: "string", description: "Filter start date/time (ISO or YYYY-MM-DD)" },
+            endDate: { type: "string", description: "Filter end date/time (ISO or YYYY-MM-DD)" },
+          },
+        },
         response: {
           200: { type: "object", additionalProperties: true },
           404: { $ref: "Error#" },
@@ -68,7 +75,8 @@ export async function bridgesRoutes(server: FastifyInstance) {
     },
     async (request, reply) => {
       const { bridge } = request.params;
-      const stats = await bridgeService.getBridgeStats(bridge);
+      const { startDate, endDate } = request.query;
+      const stats = await bridgeService.getBridgeStats(bridge, { startDate, endDate });
       if (!stats) {
         return reply.status(404).send({ error: "Bridge not found" });
       }

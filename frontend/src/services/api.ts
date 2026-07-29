@@ -416,8 +416,12 @@ export function getBridges() {
   return fetchApi<{ bridges: Bridge[] }>("/bridges");
 }
 
-export function getBridgeStats(bridge: string) {
-  return fetchApi<BridgeStats | null>(`/bridges/${bridge}/stats`);
+export function getBridgeStats(bridge: string, startDate?: string, endDate?: string) {
+  const params = new URLSearchParams();
+  if (startDate) params.set("startDate", startDate);
+  if (endDate) params.set("endDate", endDate);
+  const query = params.toString();
+  return fetchApi<BridgeStats | null>(`/bridges/${bridge}/stats${query ? `?${query}` : ""}`);
 }
 
 export interface ReconciliationSummaryFilters {

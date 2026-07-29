@@ -5,6 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import "../i18n/config";
 
+import ThemeProvider from "../theme/ThemeProvider";
+
 const createTestQueryClient = () =>
   new QueryClient({
     defaultOptions: {
@@ -22,9 +24,11 @@ const AllTheProviders = ({ children }: AllTheProvidersProps) => {
   const queryClient = createTestQueryClient();
   return (
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <Suspense fallback={null}>{children}</Suspense>
-      </MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter>
+          <Suspense fallback={null}>{children}</Suspense>
+        </MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 };

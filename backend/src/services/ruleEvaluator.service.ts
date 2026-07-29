@@ -59,33 +59,61 @@ export interface EvaluationOptions {
   executionContext?: string;
 }
 
+/**
+ * Functional predicate map for evaluating metric threshold operators.
+ */
+export type PredicateFn = (
+  actualValue: number,
+  expectedValue: number,
+  valueHigh?: number,
+  previousValue?: number
+) => boolean;
+
+export const PREDICATES: Record<ThresholdOperator, PredicateFn> = {
+  gt: (actual, value) => actual > value,
+  gte: (actual, value) => actual >= value,
+  lt: (actual, value) => actual < value,
+  lte: (actual, value) => actual <= value,
+  eq: (actual, value) => actual === value,
+  ne: (actual, value) => actual !== value,
+  between: (actual, value, valueHigh) =>
+    valueHigh !== undefined && actual >= value && actual <= valueHigh,
+  changes_by_pct: (actual, value, _valueHigh, previous) => {
+    if (previous === undefined || previous === 0) return false;
+    return Math.abs((actual - previous) / previous) * 100 >= value;
+  },
+};
+
+/**
+ * Evaluates a single rule condition against actual metric values using functional predicates.
+ *
+ * @param condition - The rule condition to evaluate.
+ * @param actualValue - The current numeric metric value.
+ * @param previousValue - Optional previous numeric metric value for change percentage calculation.
+ * @returns True if the condition is satisfied, false otherwise.
+ */
 function evaluateCondition(
   condition: RuleCondition,
   actualValue: number,
   previousValue?: number
 ): boolean {
-  const { operator, value, valueHigh } = condition;
-  switch (operator) {
-    case "gt":   return actualValue > value;
-    case "gte":  return actualValue >= value;
-    case "lt":   return actualValue < value;
-    case "lte":  return actualValue <= value;
-    case "eq":   return actualValue === value;
-    case "ne":   return actualValue !== value;
-    case "between":
-      return valueHigh !== undefined && actualValue >= value && actualValue <= valueHigh;
-    case "changes_by_pct":
-      if (previousValue === undefined || previousValue === 0) return false;
-      return Math.abs((actualValue - previousValue) / previousValue) * 100 >= value;
-    default:
-      return false;
-  }
+  const predicate = PREDICATES[condition.operator];
+  return predicate ? predicate(actualValue, condition.value, condition.valueHigh, previousValue) : false;
 }
 
 function isASTGroupNode(node: RuleASTNode): node is { op: "AND" | "OR"; conditions: RuleASTNode[] } | { op: "NOT"; condition: RuleASTNode } {
   return typeof node === "object" && node !== null && "op" in node;
 }
 
+/**
+ * Recursively evaluates an AST node or leaf condition against input metrics.
+ *
+ * @param node - The AST node or RuleCondition to evaluate.
+ * @param metrics - Current metric key-value map.
+ * @param previousMetrics - Optional previous metric key-value map.
+ * @param resultsCollector - Optional accumulator array for individual condition evaluation results.
+ * @returns Boolean result of evaluating the AST branch or leaf.
+ */
 function evaluateASTNode(
   node: RuleASTNode,
   metrics: Record<string, number>,
@@ -93,19 +121,19 @@ function evaluateASTNode(
   resultsCollector?: ConditionResult[]
 ): boolean {
   if (isASTGroupNode(node)) {
-    if (node.op === "AND") {
-      return node.conditions.every((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
+    switch (node.op) {
+      case "AND":
+        return node.conditions.every((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
+      case "OR":
+        return node.conditions.some((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
+      case "NOT":
+        return !evaluateASTNode(node.condition, metrics, previousMetrics, resultsCollector);
+      default:
+        return false;
     }
-    if (node.op === "OR") {
-      return node.conditions.some((child) => evaluateASTNode(child, metrics, previousMetrics, resultsCollector));
-    }
-    if (node.op === "NOT") {
-      return !evaluateASTNode(node.condition, metrics, previousMetrics, resultsCollector);
-    }
-    return false;
   }
 
-  // Leaf condition node
+  // Leaf condition node evaluation
   const actualValue = metrics[node.field] ?? 0;
   const prevValue = previousMetrics?.[node.field];
   const passed = evaluateCondition(node, actualValue, prevValue);
@@ -124,6 +152,12 @@ function evaluateASTNode(
   return passed;
 }
 
+/**
+ * Validates the structure and operator parameters of an AST node or leaf condition.
+ *
+ * @param node - The AST node or condition object to validate.
+ * @throws Error if any logical group or condition node is malformed.
+ */
 export function validateASTNode(node: RuleASTNode): void {
   if (!node || typeof node !== "object") {
     throw new Error("Invalid AST condition node");

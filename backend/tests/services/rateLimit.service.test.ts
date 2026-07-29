@@ -138,4 +138,19 @@ describe("RateLimitService Unit Tests", () => {
       expect(data).toContain("Type,Identifier,Tier,Endpoint,Requests,Blocked");
     });
   });
+
+  describe("computeExternalRateLimitMetrics", () => {
+    it("computes external rate limit metrics correctly", async () => {
+      vi.spyOn(redis, "hgetall").mockResolvedValue({ totalRequests: "50", blockedRequests: "2" });
+      vi.spyOn(redis, "keys").mockResolvedValue([]);
+
+      const result = await service.computeExternalRateLimitMetrics({ timeRange: "24h" });
+
+      expect(result.totalRequests).toBe(50);
+      expect(result.blockedRequests).toBe(2);
+      expect(result.throttledCount).toBe(0);
+      expect(result.isThrottled).toBe(false);
+      expect(result.tierDistribution).toBeDefined();
+    });
+  });
 });
