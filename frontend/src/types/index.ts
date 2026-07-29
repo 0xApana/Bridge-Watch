@@ -1,6 +1,7 @@
 export interface Asset {
   symbol: string;
   name: string;
+  category?: string | null;
 }
 
 export interface HealthFactors {
