@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import FreshnessMonitoring from "./FreshnessMonitoring";
@@ -112,6 +113,18 @@ describe("FreshnessMonitoring", () => {
     renderPage();
     const freshElements = screen.getAllByText("Fresh");
     expect(freshElements.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("filters the source rows by the selected status", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await user.click(screen.getByRole("button", { name: "Fresh" }));
+    expect(screen.getByText("Stellar Horizon")).toBeInTheDocument();
+    expect(screen.queryByText("Circle USDC")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByText("Circle USDC")).toBeInTheDocument();
   });
 
   it("renders freshness alerts when present", () => {
