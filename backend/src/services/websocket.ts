@@ -176,13 +176,25 @@ export class WebsocketService {
     const client = this.clients.get(clientId);
     if (!client) return;
     this.cleanupSubscriptions(client);
+
+    // Purge disconnected client from all topic subscriber sets
+    for (const [topic, subscribers] of this.topicSubscribers.entries()) {
+      subscribers.delete(clientId);
+      if (subscribers.size === 0) {
+        this.topicSubscribers.delete(topic);
+      }
+    }
+
     client.presence = "offline";
     client.socket = undefined;
     // Intentionally do NOT update lastSeen so the heartbeat sweep can
     // detect and purge stale clients that silently disconnected.
   }
 
-  private registerSocketHandlers(client: ClientState, socket: SocketConnection): void {
+  private registerSocketHandlers(
+    client: ClientState,
+    socket: SocketConnection,
+  ): void {
     socket.on("pong", () => {
       client.lastSeen = Date.now();
       client.pendingPing = false;
@@ -200,7 +212,11 @@ export class WebsocketService {
     }
   }
 
-  public subscribe(clientId: string, topic: string, filter: Record<string, unknown> = {}): void {
+  public subscribe(
+    clientId: string,
+    topic: string,
+    filter: Record<string, unknown> = {},
+  ): void {
     const client = this.clients.get(clientId);
     if (!client) return;
 
@@ -250,7 +266,9 @@ export class WebsocketService {
   ): void {
     const timestamp = options.timestamp ?? new Date().toISOString();
     const createdAtMs = Date.parse(timestamp);
-    const expiresAtMs = (Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) + MAX_HISTORY_AGE_MS;
+    const expiresAtMs =
+      (Number.isFinite(createdAtMs) ? createdAtMs : Date.now()) +
+      MAX_HISTORY_AGE_MS;
     const message: WebsocketBroadcastMessage = {
       id: randomUUID(),
       sequence: ++this.sequenceCounter,
@@ -302,16 +320,23 @@ export class WebsocketService {
     options: {
       limit?: number;
       sinceSequence?: number;
-    } = {}
+    } = {},
   ): WebsocketBroadcastMessage[] {
     const replayTopics = topics.length > 0 ? topics : ["*"];
-    const limit = Math.min(Math.max(options.limit ?? MAX_BATCH_SIZE, 1), MAX_HISTORY_PER_TOPIC);
+    const limit = Math.min(
+      Math.max(options.limit ?? MAX_BATCH_SIZE, 1),
+      MAX_HISTORY_PER_TOPIC,
+    );
     const sinceSequence = options.sinceSequence ?? 0;
 
     const replayMessages: WebsocketBroadcastMessage[] = [];
     for (const [topic, history] of this.history.entries()) {
       this.pruneExpired(topic, history);
-      if (!replayTopics.some((subscription) => this.topicMatches(subscription, topic))) {
+      if (
+        !replayTopics.some((subscription) =>
+          this.topicMatches(subscription, topic),
+        )
+      ) {
         continue;
       }
 
@@ -360,7 +385,11 @@ export class WebsocketService {
       targets,
       enqueuedAt: Date.now(),
     });
-    this.queue.sort((a, b) => PRIORITY_WEIGHT[b.message.priority] - PRIORITY_WEIGHT[a.message.priority]);
+    this.queue.sort(
+      (a, b) =>
+        PRIORITY_WEIGHT[b.message.priority] -
+        PRIORITY_WEIGHT[a.message.priority],
+    );
     if (message.priority === "critical" || message.priority === "high") {
       this.flushQueue();
     }
@@ -408,7 +437,10 @@ export class WebsocketService {
     }
   }
 
-  private sendBatch(clientId: string, messages: WebsocketBroadcastMessage[]): void {
+  private sendBatch(
+    clientId: string,
+    messages: WebsocketBroadcastMessage[],
+  ): void {
     const client = this.clients.get(clientId);
     if (!client || client.presence !== "online" || !client.socket) return;
     this.sendMessage(client.socket, {
@@ -451,7 +483,10 @@ export class WebsocketService {
     return false;
   }
 
-  private filterMatches(filter: Record<string, unknown>, payload: unknown): boolean {
+  private filterMatches(
+    filter: Record<string, unknown>,
+    payload: unknown,
+  ): boolean {
     if (typeof payload !== "object" || payload === null) return false;
 
     for (const [key, value] of Object.entries(filter)) {
@@ -459,7 +494,9 @@ export class WebsocketService {
       if (payloadValue === undefined) return false;
       if (Array.isArray(value)) {
         if (Array.isArray(payloadValue)) {
-          if (!value.some((item) => (payloadValue as unknown[]).includes(item))) {
+          if (
+            !value.some((item) => (payloadValue as unknown[]).includes(item))
+          ) {
             return false;
           }
         } else if (!value.includes(payloadValue)) {
@@ -487,8 +524,11 @@ export class WebsocketService {
     const client = this.clients.get(clientId);
     if (!client || client.presence !== "online" || !client.socket) return;
 
-    const replayTopics = topics.length > 0 ? topics : Array.from(client.subscriptions);
-    const replayMessages = this.getReplayMessages(replayTopics, { limit: MAX_BATCH_SIZE });
+    const replayTopics =
+      topics.length > 0 ? topics : Array.from(client.subscriptions);
+    const replayMessages = this.getReplayMessages(replayTopics, {
+      limit: MAX_BATCH_SIZE,
+    });
 
     if (replayMessages.length === 0) {
       return;
@@ -500,9 +540,14 @@ export class WebsocketService {
     });
   }
 
-  private pruneExpired(topic: string, history: WebsocketBroadcastMessage[]): void {
+  private pruneExpired(
+    topic: string,
+    history: WebsocketBroadcastMessage[],
+  ): void {
     const now = Date.now();
-    const kept = history.filter((message) => Date.parse(message.expiresAt) > now);
+    const kept = history.filter(
+      (message) => Date.parse(message.expiresAt) > now,
+    );
     const removed = history.length - kept.length;
     if (removed > 0) {
       this.replayMetrics.totalExpired += removed;
@@ -572,7 +617,10 @@ export class WebsocketService {
     }
   }
 
-  private sendSystem(connection: SocketConnection, payload: Record<string, unknown>): void {
+  private sendSystem(
+    connection: SocketConnection,
+    payload: Record<string, unknown>,
+  ): void {
     this.sendMessage(connection, { type: "system", ...payload });
   }
 
