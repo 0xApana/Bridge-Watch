@@ -191,8 +191,10 @@ export interface BridgeSummary {
   coverage: number;
   /** Performance metric: average transfer time in milliseconds */
   performance: number;
-  /** Total value locked in the bridge */
+  /** Total value locked in the bridge (USD) */
   totalValueLocked: number;
+  /** Total value locked in native token (optional, for USD/Native toggle) */
+  totalValueLockedNative?: number;
   /** Supply on Stellar */
   supplyOnStellar: number;
   /** Supply on source chain */
