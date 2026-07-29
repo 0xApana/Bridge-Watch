@@ -37,6 +37,28 @@ function getStatusColor(status: HealthStatus): string {
   }
 }
 
+function getStatusSurfaceClasses(status: HealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "bg-green-500/20 text-green-400";
+    case "warning":
+      return "bg-yellow-500/20 text-yellow-400";
+    case "critical":
+      return "bg-red-500/20 text-red-400";
+  }
+}
+
+function getStatusFillClass(status: HealthStatus): string {
+  switch (status) {
+    case "healthy":
+      return "bg-green-500";
+    case "warning":
+      return "bg-yellow-500";
+    case "critical":
+      return "bg-red-500";
+  }
+}
+
 function getStatusLabel(status: HealthStatus): string {
   switch (status) {
     case "healthy":
@@ -131,8 +153,7 @@ export default function HealthScoreCard({
     >
       <div className="flex items-center gap-3 mb-4">
         <div
-          className="w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold"
-          style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
+          className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold ${getStatusSurfaceClasses(status)}`}
           aria-hidden="true"
         >
           {ASSET_ICONS[symbol] || symbol.charAt(0)}
@@ -168,8 +189,7 @@ export default function HealthScoreCard({
           aria-label={`${symbol} health score breakdown tooltip`}
         >
           <div
-            className="px-2.5 py-1 rounded-full text-xs font-medium cursor-help"
-            style={{ backgroundColor: `${statusColor}20`, color: statusColor }}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium cursor-help ${getStatusSurfaceClasses(status)}`}
             role="status"
             aria-label={`Status: ${getStatusLabel(status)}`}
           >
@@ -232,7 +252,6 @@ export default function HealthScoreCard({
           {(Object.entries(factors) as [keyof HealthFactors, number][]).map(
             ([key, value]) => {
               const factorStatus = getHealthStatus(value);
-              const factorColor = getStatusColor(factorStatus);
               return (
                 <div
                   key={key}
@@ -252,8 +271,8 @@ export default function HealthScoreCard({
                       aria-valuemax={100}
                     >
                       <div
-                        className="h-full rounded-full transition-all duration-300"
-                        style={{ width: `${value}%`, backgroundColor: factorColor }}
+                        className={`h-full rounded-full transition-all duration-300 ${getStatusFillClass(factorStatus)}`}
+                        style={{ width: `${value}%` }}
                       />
                     </div>
                     <span className="text-sm text-stellar-text-primary w-7 text-right tabular-nums">
