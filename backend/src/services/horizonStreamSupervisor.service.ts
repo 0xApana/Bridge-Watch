@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { logger } from "../utils/logger.js";
+import { config as appConfig } from "../config/index.js";
 import { getMetricsService } from "./metrics.service.js";
 import { ingestionQueueManager } from "./ingestionQueueManager.service.js";
 
@@ -16,6 +17,10 @@ export interface StreamHealthMetrics {
   streamId: string;
   status: StreamStatus;
   reconnectCount: number;
+  activeNode: string;
+  isPrimaryNode: boolean;
+  fallbackNodes: string[];
+  failoverCount: number;
   lastEventAt: string | null;
   gapDetected: boolean;
   gapSinceMs: number | null;
@@ -25,6 +30,7 @@ export interface StreamHealthMetrics {
 export interface HorizonStreamConfig {
   streamId: string;
   url: string;
+  fallbackUrls?: string[];
   cursor?: string;
   gapThresholdMs?: number;
   maxReconnectAttempts?: number;
@@ -34,13 +40,15 @@ export interface HorizonStreamConfig {
 }
 
 /**
- * Supervises a single Horizon SSE streaming connection.
- * Handles reconnection with exponential back-off, cursor checkpointing,
- * gap detection, and stream-health metrics.
+ * Supervises a single Horizon SSE streaming connection with automatic multi-node
+ * load balancing, secondary fallback node supervisor, and failback recovery.
  */
 export class HorizonStreamSupervisor extends EventEmitter {
   private readonly streamId: string;
-  private readonly url: string;
+  private readonly nodes: string[];
+  private activeNodeIndex = 0;
+  private failoverCount = 0;
+
   private readonly gapThresholdMs: number;
   private readonly maxReconnectAttempts: number;
   private readonly baseBackoffMs: number;
@@ -59,12 +67,17 @@ export class HorizonStreamSupervisor extends EventEmitter {
   private abortController: AbortController | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private gapCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private failbackCheckTimer: ReturnType<typeof setInterval> | null = null;
   private closed = false;
 
   constructor(config: HorizonStreamConfig) {
     super();
     this.streamId = config.streamId;
-    this.url = config.url;
+
+    const primaryUrl = config.url || appConfig.STELLAR_HORIZON_URL;
+    const fallbacks = config.fallbackUrls || appConfig.STELLAR_HORIZON_FALLBACK_URLS || [];
+    this.nodes = Array.from(new Set([primaryUrl, ...fallbacks].filter(Boolean)));
+
     this.lastCursor = config.cursor ?? null;
     this.gapThresholdMs = config.gapThresholdMs ?? 30_000;
     this.maxReconnectAttempts = config.maxReconnectAttempts ?? 20;
@@ -73,11 +86,20 @@ export class HorizonStreamSupervisor extends EventEmitter {
     this.timeoutMs = config.timeoutMs ?? 120_000;
   }
 
+  getActiveNode(): string {
+    return this.nodes[this.activeNodeIndex] || this.nodes[0];
+  }
+
+  isPrimaryActive(): boolean {
+    return this.activeNodeIndex === 0;
+  }
+
   start(): void {
     this.closed = false;
     this.startedAt = new Date();
     this._connect();
     this._startGapCheck();
+    this._startFailbackCheck();
   }
 
   stop(): void {
@@ -85,6 +107,7 @@ export class HorizonStreamSupervisor extends EventEmitter {
     this.setStatus("closed");
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.gapCheckTimer) clearInterval(this.gapCheckTimer);
+    if (this.failbackCheckTimer) clearInterval(this.failbackCheckTimer);
     this.abortController?.abort();
     this.removeAllListeners();
     logger.info({ streamId: this.streamId }, "Horizon stream supervisor stopped");
@@ -111,6 +134,10 @@ export class HorizonStreamSupervisor extends EventEmitter {
       streamId: this.streamId,
       status: this.status,
       reconnectCount: this.reconnectCount,
+      activeNode: this.getActiveNode(),
+      isPrimaryNode: this.isPrimaryActive(),
+      fallbackNodes: this.nodes.slice(1),
+      failoverCount: this.failoverCount,
       lastEventAt: this.lastEventAt?.toISOString() ?? null,
       gapDetected: this.gapDetected,
       gapSinceMs: this.gapStartedAt ? nowMs - this.gapStartedAt.getTime() : null,
@@ -125,12 +152,16 @@ export class HorizonStreamSupervisor extends EventEmitter {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
+    const activeUrl = this.getActiveNode();
     const streamUrl = this.lastCursor
-      ? `${this.url}?cursor=${this.lastCursor}`
-      : this.url;
+      ? `${activeUrl}?cursor=${this.lastCursor}`
+      : activeUrl;
 
     this.setStatus("connecting");
-    logger.info({ streamId: this.streamId, url: streamUrl }, "Connecting to Horizon stream");
+    logger.info(
+      { streamId: this.streamId, nodeUrl: activeUrl, isPrimary: this.isPrimaryActive() },
+      "Connecting to Horizon stream node"
+    );
 
     const timeoutId = setTimeout(() => this.abortController?.abort(), this.timeoutMs);
     try {
@@ -148,7 +179,7 @@ export class HorizonStreamSupervisor extends EventEmitter {
       this.reconnectCount = 0;
       this.gapDetected = false;
       this.gapStartedAt = null;
-      logger.info({ streamId: this.streamId }, "Horizon stream connected");
+      logger.info({ streamId: this.streamId, activeNode: activeUrl }, "Horizon stream connected");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -179,7 +210,7 @@ export class HorizonStreamSupervisor extends EventEmitter {
         return;
       }
 
-      logger.warn({ streamId: this.streamId, error: errMsg }, "Horizon stream error");
+      logger.warn({ streamId: this.streamId, nodeUrl: activeUrl, error: errMsg }, "Horizon stream error");
       this.setStatus("error");
       this._scheduleReconnect();
     } finally {
@@ -188,7 +219,7 @@ export class HorizonStreamSupervisor extends EventEmitter {
   }
 
   private _processLine(line: string): void {
-    if (!line || line.startsWith(":")) return; // keep-alive or comment
+    if (!line || line.startsWith(":")) return;
 
     if (line.startsWith("data:")) {
       const raw = line.slice(5).trim();
@@ -200,17 +231,16 @@ export class HorizonStreamSupervisor extends EventEmitter {
         this.gapDetected = false;
         this.gapStartedAt = null;
 
-        // Update cursor from paging token or id
         if (typeof event.paging_token === "string") {
           this.lastCursor = event.paging_token;
         } else if (typeof event.id === "string") {
           this.lastCursor = event.id;
         }
 
-    this.emit("event", event);
-    this._recordEventMetric();
+        this.emit("event", event);
+        this._recordEventMetric();
 
-    void this._handleEventForReorg(event);
+        void this._handleEventForReorg(event);
       } catch {
         // Non-JSON line, skip
       }
@@ -286,6 +316,28 @@ export class HorizonStreamSupervisor extends EventEmitter {
 
   private _scheduleReconnect(): void {
     if (this.closed) return;
+
+    this.reconnectCount += 1;
+
+    // Failover to secondary Horizon node if primary fails multiple consecutive times
+    if (this.nodes.length > 1 && this.reconnectCount % 3 === 0) {
+      const prevNode = this.getActiveNode();
+      this.activeNodeIndex = (this.activeNodeIndex + 1) % this.nodes.length;
+      this.failoverCount += 1;
+      const nextNode = this.getActiveNode();
+
+      logger.warn(
+        { streamId: this.streamId, fromNode: prevNode, toNode: nextNode, failoverCount: this.failoverCount },
+        "Failing over Horizon stream to next RPC node endpoint"
+      );
+
+      this.emit("nodeChange", {
+        streamId: this.streamId,
+        activeNode: nextNode,
+        isPrimary: this.isPrimaryActive(),
+      });
+    }
+
     if (this.reconnectCount >= this.maxReconnectAttempts) {
       logger.error(
         { streamId: this.streamId, attempts: this.reconnectCount },
@@ -297,10 +349,9 @@ export class HorizonStreamSupervisor extends EventEmitter {
 
     const jitter = Math.random() * 0.3 * this.baseBackoffMs;
     const backoff = Math.min(
-      this.baseBackoffMs * Math.pow(2, this.reconnectCount) + jitter,
+      this.baseBackoffMs * Math.pow(2, Math.min(this.reconnectCount, 6)) + jitter,
       this.maxBackoffMs
     );
-    this.reconnectCount += 1;
     this.setStatus("reconnecting");
 
     logger.info(
@@ -329,6 +380,40 @@ export class HorizonStreamSupervisor extends EventEmitter {
         this.emit("gap", { streamId: this.streamId, sinceLastEventMs: sinceLastEvent });
       }
     }, Math.min(this.gapThresholdMs / 2, 10_000));
+  }
+
+  private _startFailbackCheck(): void {
+    // Periodically check if primary node has recovered when currently connected to fallback
+    this.failbackCheckTimer = setInterval(async () => {
+      if (this.closed || this.isPrimaryActive()) return;
+
+      const primaryUrl = this.nodes[0];
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(primaryUrl, { method: "GET", signal: controller.signal });
+        clearTimeout(timer);
+
+        if (res.ok || res.status === 200 || res.status === 404) {
+          logger.info(
+            { streamId: this.streamId, primaryUrl },
+            "Primary Horizon node recovered — performing automatic failback check"
+          );
+          this.activeNodeIndex = 0;
+          this.reconnectCount = 0;
+
+          this.emit("nodeChange", {
+            streamId: this.streamId,
+            activeNode: primaryUrl,
+            isPrimary: true,
+          });
+
+          this._connect();
+        }
+      } catch {
+        // Primary node still unresponsive, stay on fallback
+      }
+    }, 30_000);
   }
 
   private setStatus(status: StreamStatus): void {
@@ -396,5 +481,4 @@ export class HorizonStreamManager {
   }
 }
 
-// Singleton manager shared across the application
 export const horizonStreamManager = new HorizonStreamManager();
