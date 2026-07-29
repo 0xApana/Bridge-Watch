@@ -3,6 +3,7 @@ import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 import { EmailNotificationService, EmailRecipient, EmailReportPayload } from "./email.service.js";
 import { AnalyticsService } from "./analytics.service.js";
+import { formatEmailDate } from "../utils/email.js";
 import { AlertService } from "./alert.service.js";
 import { ReconciliationService } from "./reconciliation.service.js";
 
@@ -458,9 +459,7 @@ export class ReportSchedulingService {
    * degraded dependency never prevents the report from being sent.
    */
   private async generateReportHtml(delivery: ReportDelivery): Promise<string> {
-    const periodLabel = `${delivery.periodStart.toISOString().slice(0, 10)} – ${delivery.periodEnd
-      .toISOString()
-      .slice(0, 10)}`;
+    const periodLabel = `${formatEmailDate(delivery.periodStart)} – ${formatEmailDate(delivery.periodEnd)}`;
 
     const [protocolStats, assetRankings, alertSummary, reconciliation] = await Promise.all([
       this.buildProtocolStatsSection(),

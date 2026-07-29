@@ -223,56 +223,6 @@ export async function outboxAdminRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // GET /admin/outbox/health - Health check endpoint
-  fastify.get("/health", {
-    schema: {
-      description: "Health check for outbox system",
-      tags: ["outbox-admin"],
-      response: {
-        200: {
-          type: "object",
-          properties: {
-            status: { type: "string" },
-            pending: { type: "number" },
-            processing: { type: "number" },
-            failed: { type: "number" },
-            deadLetter: { type: "number" },
-            timestamp: { type: "string" },
-          },
-        },
-      },
-    },
-  }, async (request, reply) => {
-    try {
-      const stats = await adminApi.getStats();
-      
-      // Determine health status based on metrics
-      let status = "healthy";
-      if (stats.outbox.failed > 100) {
-        status = "degraded";
-      }
-      if (stats.deadLetter.total > 50) {
-        status = "unhealthy";
-      }
-
-      return reply.send({
-        status,
-        pending: stats.outbox.pending,
-        processing: stats.outbox.processing,
-        failed: stats.outbox.failed,
-        deadLetter: stats.deadLetter.total,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error({ error }, "Health check failed");
-      return reply.code(200 as any).send({
-        status: "error",
-        error: "Health check failed",
-        timestamp: new Date().toISOString(),
-      });
-    }
-  });
-
   // POST /admin/outbox/purge/delivered - Purge old delivered events
   fastify.post("/purge/delivered", {
     schema: {
