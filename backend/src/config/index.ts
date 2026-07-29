@@ -28,6 +28,15 @@ const envSchema = z.object({
     .string()
     .url()
     .default("https://horizon-testnet.stellar.org"),
+  STELLAR_HORIZON_FALLBACK_URLS: z
+    .string()
+    .default("https://horizon.stellar.org")
+    .transform((val) =>
+      val
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    ),
   SOROBAN_RPC_URL: z
     .string()
     .url()
