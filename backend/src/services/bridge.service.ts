@@ -29,6 +29,9 @@ export interface BridgeStats {
   volume24h: number;
   volume7d: number;
   volume30d: number;
+  customVolume?: number;
+  startDate?: string;
+  endDate?: string;
   totalTransactions: number;
   averageTransferTime: number;
   uptime30d: number;
@@ -94,14 +97,22 @@ export class BridgeService {
     return { bridges };
   }
 
-  async getBridgeStats(bridgeName: string): Promise<BridgeStats | null> {
-    logger.info({ bridgeName }, "Fetching bridge stats");
+  async getBridgeStats(
+    bridgeName: string,
+    dateRange?: { startDate?: string; endDate?: string }
+  ): Promise<BridgeStats | null> {
+    logger.info({ bridgeName, dateRange }, "Fetching bridge stats");
     const db = getDatabase();
     const bridge = await db("bridges").select("*").where({ name: bridgeName }).first();
     if (!bridge) return null;
 
-    const summary = await this.bridgeTransactionService.getBridgeTransactionSummary(bridgeName);
+    const summary = await this.bridgeTransactionService.getBridgeTransactionSummary(bridgeName, dateRange);
     const evmLockDetails = await this.wormholeWatcher.fetchLockBalances({ bridgeName });
+
+    let customVolume: number | undefined;
+    if (dateRange?.startDate || dateRange?.endDate) {
+      customVolume = Number(summary.totalVolume || 0);
+    }
 
     return {
       name: bridge.name,
@@ -112,6 +123,7 @@ export class BridgeService {
       volume24h: Number(summary.totalVolume || 0),
       volume7d: Number(summary.totalVolume || 0),
       volume30d: Number(summary.totalVolume || 0),
+      ...(customVolume !== undefined ? { customVolume, startDate: dateRange?.startDate, endDate: dateRange?.endDate } : {}),
       totalTransactions: summary.totalTransactions,
       averageTransferTime: summary.averageConfirmationTimeSeconds,
       uptime30d: bridge.status === "healthy" ? 100 : 75,

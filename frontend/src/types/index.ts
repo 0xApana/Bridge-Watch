@@ -55,6 +55,9 @@ export interface BridgeStats {
   volume24h: number;
   volume7d: number;
   volume30d: number;
+  customVolume?: number;
+  startDate?: string;
+  endDate?: string;
   totalTransactions: number;
   averageTransferTime: number;
   uptime30d: number;
