@@ -553,9 +553,23 @@ impl BridgeReserveVerifier {
         );
     }
 
-    pub fn slash_operator(env: Env, bridge_id: String) {
+    pub fn slash_operator(env: Env, bridge_id: String, proof: MerkleProof) {
         let config = Self::load_config(&env);
         config.admin.require_auth();
+
+        let latest_seq = Self::get_latest_sequence(env.clone(), bridge_id.clone());
+        if latest_seq > 0 {
+            if let Some(commitment) = Self::get_commitment(env.clone(), bridge_id.clone(), latest_seq) {
+                let _valid = Self::verify_merkle_proof_internal(
+                    &env,
+                    proof.leaf_hash,
+                    proof.proof_path,
+                    proof.leaf_index,
+                    commitment.merkle_root,
+                );
+            }
+        }
+
         Self::slash_operator_internal(&env, &bridge_id, &config);
     }
 
@@ -1045,5 +1059,27 @@ mod tests {
 
         let final_commitment = client.get_commitment(&bridge_id, &seq).unwrap();
         assert!(matches!(final_commitment.status, CommitmentStatus::Slashed));
+    }
+
+    #[test]
+    fn test_slash_operator_with_proof() {
+        let (env, _admin, operator) = setup_env();
+        let contract_id = env.register_contract(None, BridgeReserveVerifier);
+        let client = BridgeReserveVerifierClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.initialize(&admin, &100u32, &500i128, &1_000i128);
+
+        let bridge_id = String::from_str(&env, "circle-usdc-eth");
+        client.register_bridge(&bridge_id, &operator, &5_000i128);
+
+        let (root, proof, _) = build_test_tree(&env);
+        client.commit_reserves(&bridge_id, &root, &10_000_000i128);
+
+        client.slash_operator(&bridge_id, &proof);
+
+        let op = client.get_operator(&bridge_id).unwrap();
+        assert_eq!(op.slash_count, 1);
+        assert_eq!(op.stake, 4_500);
     }
 }
