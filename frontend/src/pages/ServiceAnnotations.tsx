@@ -288,14 +288,14 @@ export default function ServiceAnnotations() {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
           <h1 className="text-3xl font-bold text-stellar-text-primary">Service Annotations</h1>
           <p className="mt-2 text-stellar-text-secondary">
             Create and manage annotations tied to services and time ranges.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2 text-sm text-stellar-text-secondary">
             <label htmlFor="ann-author">Author:</label>
             <input

@@ -152,18 +152,23 @@ test("creates, edits, and deletes service annotations", async ({ page }) => {
 
   await expect(page.getByText("Initial annotation for testing")).toBeVisible();
 
-  await page.getByRole("button", { name: /Edit annotation for price-service/i }).click();
+  const createdRow = page.getByRole("row").filter({ hasText: "Initial annotation for testing" });
+  await expect(createdRow).toBeVisible();
+  await createdRow.getByRole("button", { name: /Edit annotation/i }).click();
   await page.getByLabel("Content *").fill("Updated annotation note");
   await page.getByRole("button", { name: "Update Annotation" }).click();
 
   await expect(page.getByText("Updated annotation note")).toBeVisible();
   await expect(page.getByText("Initial annotation for testing")).not.toBeVisible();
 
+  const updatedRow = page.getByRole("row").filter({ hasText: "Updated annotation note" });
+  await expect(updatedRow).toBeVisible();
+
   page.once("dialog", async (dialog) => {
     await dialog.accept();
   });
-  await page.getByRole("button", { name: /Delete annotation for price-service/i }).click();
+  await updatedRow.getByRole("button", { name: /Delete annotation/i }).click();
 
   await expect(page.getByText("Updated annotation note")).not.toBeVisible();
-  await expect(page.getByText("No annotations found. Create one to get started.")).toBeVisible();
+  await expect(page.getByText("Seed annotation")).toBeVisible();
 });
