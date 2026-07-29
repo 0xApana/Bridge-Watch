@@ -1,7 +1,10 @@
+import { useMemo, useState } from "react";
 import { useRefreshControls } from "../hooks/useRefreshControls";
 import { useFreshnessSnapshot, useFreshnessAlerts } from "../hooks/useFreshness";
 import RefreshControls from "../components/RefreshControls";
 import { SkeletonCard } from "../components/Skeleton";
+
+type StatusFilter = "all" | "fresh" | "stale" | "critical";
 
 function StatusBadge({ status }: { status: "fresh" | "stale" | "unknown" }) {
   if (status === "fresh") {
@@ -44,6 +47,8 @@ function formatAge(lastUpdated: string | null): string {
 }
 
 export default function FreshnessMonitoring() {
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+
   const refreshControls = useRefreshControls({
     viewId: "freshness",
     targets: [{ id: "freshness", label: "Freshness data", queryKey: ["freshness"] }],
@@ -62,6 +67,34 @@ export default function FreshnessMonitoring() {
   const sources = data?.sources ?? [];
   const staleCount = data?.staleSources ?? 0;
   const freshCount = data?.freshSources ?? 0;
+
+  const criticalSourceKeys = useMemo(() => {
+    const keys = new Set<string>();
+    alertsData?.alerts.forEach((alert) => {
+      if (alert.severity === "critical") {
+        keys.add(alert.source);
+      }
+    });
+    return keys;
+  }, [alertsData]);
+
+  const filteredSources = useMemo(() => {
+    if (statusFilter === "all") return sources;
+
+    return sources.filter((source) => {
+      if (statusFilter === "fresh") return source.status === "fresh";
+      if (statusFilter === "stale") return source.status === "stale";
+      if (statusFilter === "critical") return criticalSourceKeys.has(source.key);
+      return false;
+    });
+  }, [criticalSourceKeys, sources, statusFilter]);
+
+  const filterOptions: Array<{ id: StatusFilter; label: string }> = [
+    { id: "all", label: "All" },
+    { id: "fresh", label: "Fresh" },
+    { id: "stale", label: "Stale" },
+    { id: "critical", label: "Critical" },
+  ];
 
   return (
     <div className="space-y-8">
@@ -124,8 +157,28 @@ export default function FreshnessMonitoring() {
       )}
 
       <div className="rounded-lg border border-stellar-border bg-stellar-card">
-        <div className="px-6 py-4 border-b border-stellar-border">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-stellar-border px-6 py-4">
           <h2 className="text-lg font-semibold text-stellar-text-primary">Source Freshness Status</h2>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Freshness status filters">
+            {filterOptions.map((option) => {
+              const isActive = statusFilter === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={isActive}
+                  onClick={() => setStatusFilter(option.id)}
+                  className={`rounded-full border px-3 py-1 text-sm font-medium transition-colors ${
+                    isActive
+                      ? "border-stellar-accent bg-stellar-accent/20 text-stellar-accent"
+                      : "border-stellar-border bg-stellar-dark/40 text-stellar-text-secondary hover:border-stellar-accent/60 hover:text-stellar-text-primary"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {isLoading ? (
@@ -141,6 +194,10 @@ export default function FreshnessMonitoring() {
               is active.
             </p>
           </div>
+        ) : filteredSources.length === 0 ? (
+          <div className="px-6 py-8 text-center">
+            <p className="text-stellar-text-secondary">No sources match the selected filter.</p>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -155,7 +212,7 @@ export default function FreshnessMonitoring() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stellar-border">
-                {sources.map((source) => (
+                {filteredSources.map((source) => (
                   <tr
                     key={source.key}
                     className={
