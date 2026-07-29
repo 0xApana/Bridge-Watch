@@ -14,6 +14,7 @@ import {
   getReconciliationMismatchDetail,
   updateReconciliationTriage,
 } from "../services/api";
+import { formatUtcDate } from "../utils/formatUtcDate";
 import type {
   CommitmentVerificationStatus,
   DriftSeverity,
@@ -126,10 +127,7 @@ function formatTime(value: string | null): string {
 }
 
 function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
+  return formatUtcDate(value);
 }
 
 function titleCase(value: string): string {
