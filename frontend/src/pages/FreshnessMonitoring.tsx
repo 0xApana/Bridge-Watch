@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { useRefreshControls } from "../hooks/useRefreshControls";
-import { useFreshnessSnapshot, useFreshnessAlerts } from "../hooks/useFreshness";
+import { useRefreshControls, type RefreshTarget } from "../hooks/useRefreshControls";
+import { useFreshness } from "../hooks/useFreshness";
 import RefreshControls from "../components/RefreshControls";
 import { SkeletonCard } from "../components/Skeleton";
 
@@ -49,34 +49,31 @@ function formatAge(lastUpdated: string | null): string {
 export default function FreshnessMonitoring() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
 
+  // Memoized so useRefreshControls receives a stable array identity across
+  // renders instead of a fresh literal each time.
+  const refreshTargets = useMemo<RefreshTarget[]>(
+    () => [{ id: "freshness", label: "Freshness data", queryKey: ["freshness"] }],
+    []
+  );
+
   const refreshControls = useRefreshControls({
     viewId: "freshness",
-    targets: [{ id: "freshness", label: "Freshness data", queryKey: ["freshness"] }],
+    targets: refreshTargets,
     defaultIntervalMs: 30_000,
   });
 
-  const { data, isLoading, refetch } = useFreshnessSnapshot({
-    refetchInterval: refreshControls.preferences.autoRefreshEnabled
-      ? refreshControls.preferences.refreshIntervalMs
-      : false,
-    refetchOnWindowFocus: refreshControls.preferences.refreshOnFocus,
-  });
-
-  const { data: alertsData } = useFreshnessAlerts();
-
-  const sources = data?.sources ?? [];
-  const staleCount = data?.staleSources ?? 0;
-  const freshCount = data?.freshSources ?? 0;
-
-  const criticalSourceKeys = useMemo(() => {
-    const keys = new Set<string>();
-    alertsData?.alerts.forEach((alert) => {
-      if (alert.severity === "critical") {
-        keys.add(alert.source);
-      }
+  const { sources, staleSources: staleCount, freshSources: freshCount, alerts, criticalSourceKeys, isLoading, refetch } =
+    useFreshness({
+      refetchInterval: refreshControls.preferences.autoRefreshEnabled
+        ? refreshControls.preferences.refreshIntervalMs
+        : false,
+      refetchOnWindowFocus: refreshControls.preferences.refreshOnFocus,
     });
-    return keys;
-  }, [alertsData]);
+
+  const controlTargets = useMemo<RefreshTarget[]>(
+    () => [{ id: "freshness", label: "Freshness data", refetch }],
+    [refetch]
+  );
 
   const filteredSources = useMemo(() => {
     if (statusFilter === "all") return sources;
@@ -112,7 +109,7 @@ export default function FreshnessMonitoring() {
         onRefreshIntervalChange={refreshControls.setRefreshIntervalMs}
         refreshOnFocus={refreshControls.preferences.refreshOnFocus}
         onRefreshOnFocusChange={refreshControls.setRefreshOnFocus}
-        targets={[{ id: "freshness", label: "Freshness data", refetch }]}
+        targets={controlTargets}
         selectedTargetIds={refreshControls.preferences.selectedTargetIds}
         onSelectedTargetIdsChange={refreshControls.setSelectedTargetIds}
         onRefresh={refreshControls.refreshNow}
@@ -140,13 +137,13 @@ export default function FreshnessMonitoring() {
         </div>
       )}
 
-      {alertsData && alertsData.alerts.length > 0 && (
+      {alerts.length > 0 && (
         <div className="rounded-lg border border-amber-800/40 bg-amber-900/10 p-4">
           <h2 className="text-sm font-semibold text-amber-400 mb-2">
-            Freshness Alerts ({alertsData.alerts.length})
+            Freshness Alerts ({alerts.length})
           </h2>
           <ul className="space-y-1">
-            {alertsData.alerts.map((alert, i) => (
+            {alerts.map((alert, i) => (
               <li key={i} className="text-sm text-stellar-text-secondary">
                 <span className="font-medium text-amber-300">[{alert.severity.toUpperCase()}]</span>{" "}
                 {alert.label}: {alert.message}
