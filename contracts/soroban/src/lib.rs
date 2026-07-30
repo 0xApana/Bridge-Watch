@@ -4,6 +4,7 @@
 // governance and insurance_pool are standalone contracts — only compiled for
 // tests (native target) to avoid Wasm symbol conflicts with BridgeWatchContract.
 pub mod acl;
+pub mod mmr_accumulator;
 #[cfg(test)]
 pub mod analytics_aggregator;
 #[cfg(test)]

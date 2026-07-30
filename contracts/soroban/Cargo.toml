@@ -45,3 +45,7 @@ path = "tests/acl.test.rs"
 [[test]]
 name = "fee_distribution_test"
 path = "tests/fee_distribution_test.rs"
+
+[[test]]
+name = "mmr_accumulator_test"
+path = "tests/mmr_accumulator.test.rs"
