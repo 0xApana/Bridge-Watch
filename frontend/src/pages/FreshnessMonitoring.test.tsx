@@ -5,46 +5,39 @@ import { MemoryRouter } from "react-router-dom";
 import FreshnessMonitoring from "./FreshnessMonitoring";
 
 vi.mock("../hooks/useFreshness", () => ({
-  useFreshnessSnapshot: () => ({
-    data: {
-      sources: [
-        {
-          key: "stellar-horizon",
-          label: "Stellar Horizon",
-          status: "fresh",
-          lastUpdated: new Date(Date.now() - 5000).toISOString(),
-          expectedIntervalMs: 30000,
-          trend: "stable",
-        },
-        {
-          key: "circle-usdc",
-          label: "Circle USDC",
-          status: "stale",
-          lastUpdated: new Date(Date.now() - 600000).toISOString(),
-          expectedIntervalMs: 60000,
-          trend: "degrading",
-        },
-      ],
-      staleSources: 1,
-      freshSources: 1,
-      timestamp: new Date().toISOString(),
-    },
+  useFreshness: () => ({
+    sources: [
+      {
+        key: "stellar-horizon",
+        label: "Stellar Horizon",
+        status: "fresh",
+        lastUpdated: new Date(Date.now() - 5000).toISOString(),
+        expectedIntervalMs: 30000,
+        trend: "stable",
+      },
+      {
+        key: "circle-usdc",
+        label: "Circle USDC",
+        status: "stale",
+        lastUpdated: new Date(Date.now() - 600000).toISOString(),
+        expectedIntervalMs: 60000,
+        trend: "degrading",
+      },
+    ],
+    staleSources: 1,
+    freshSources: 1,
+    alerts: [
+      {
+        source: "circle-usdc",
+        label: "Circle USDC",
+        severity: "warning",
+        message: "No update in 10 minutes",
+        since: new Date().toISOString(),
+      },
+    ],
+    criticalSourceKeys: new Set<string>(),
     isLoading: false,
     refetch: vi.fn(),
-  }),
-  useFreshnessAlerts: () => ({
-    data: {
-      alerts: [
-        {
-          source: "circle-usdc",
-          label: "Circle USDC",
-          severity: "warning",
-          message: "No update in 10 minutes",
-          since: new Date().toISOString(),
-        },
-      ],
-      timestamp: new Date().toISOString(),
-    },
   }),
 }));
 
