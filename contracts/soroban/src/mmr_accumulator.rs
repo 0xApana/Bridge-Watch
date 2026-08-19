@@ -16,9 +16,10 @@
 ///   (with the local subtree replacing its position), and compares.
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short,
+    contract, contracterror, contractimpl, contracttype, symbol_short,
     Address, BytesN, Env, Vec,
 };
+
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -88,7 +89,7 @@ fn merge(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
     let mut buf = soroban_sdk::Bytes::new(env);
     buf.append(&left.clone().into());
     buf.append(&right.clone().into());
-    env.crypto().sha256(&buf)
+    env.crypto().sha256(&buf).into()
 }
 
 /// Hash a raw leaf value to produce the leaf node hash.
@@ -97,7 +98,7 @@ fn hash_leaf(env: &Env, data: &BytesN<32>) -> BytesN<32> {
     let mut buf = soroban_sdk::Bytes::new(env);
     buf.push_back(0x00u8);
     buf.append(&data.clone().into());
-    env.crypto().sha256(&buf)
+    env.crypto().sha256(&buf).into()
 }
 
 /// Hash an internal node: domain-separated with 0x01 prefix.
@@ -106,8 +107,9 @@ fn hash_node(env: &Env, left: &BytesN<32>, right: &BytesN<32>) -> BytesN<32> {
     buf.push_back(0x01u8);
     buf.append(&left.clone().into());
     buf.append(&right.clone().into());
-    env.crypto().sha256(&buf)
+    env.crypto().sha256(&buf).into()
 }
+
 
 /// Bag all peaks right-to-left into a single 32-byte root.
 /// With a single peak, the root equals that peak.

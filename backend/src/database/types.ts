@@ -532,3 +532,48 @@ export interface CircuitBreakerActionLog {
   executed_at: Date;
 }
 
+// ─── bft_oracle_providers / bft_consensus_rounds / bft_slashing_events ───────
+
+export interface BftOracleProvider {
+  provider_key: string;
+  display_name: string;
+  public_key: string;
+  stake_weight: number;
+  status: "active" | "slashed" | "degraded" | "suspended";
+  slashed: boolean;
+  slashed_at: Date | null;
+  slash_reason: string | null;
+  total_submissions: number;
+  total_slashes: number;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export interface BftConsensusRound {
+  id: string;
+  asset_code: string;
+  consensus_price: number;
+  median_of_medians: number;
+  mean: number;
+  std_dev: number;
+  total_providers: number;
+  valid_providers: number;
+  quorum_reached: boolean;
+  aggregate_signature: string | null;
+  created_at: Date;
+}
+
+export interface BftSlashingEvent {
+  id: string;
+  provider_key: string;
+  round_id: string | null;
+  asset_code: string;
+  reported_value: number;
+  consensus_value: number;
+  deviation_sigma: number;
+  slashed_stake: number;
+  reason: string;
+  created_at: Date;
+}
+
+
