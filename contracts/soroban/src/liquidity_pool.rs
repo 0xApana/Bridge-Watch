@@ -1070,8 +1070,9 @@ mod tests {
         );
 
         let depth = get_liquidity_depth(&env, pool_id);
-        let avg = (reserve_a + reserve_b) / 2;
+        let avg = ((reserve_a + reserve_b) / 2) as u32;
         assert_eq!(depth.depth_score, avg);
+
     }
 
     // ── Impermanent loss tests ─────────────────────────────────────────────

@@ -49,3 +49,8 @@ path = "tests/fee_distribution_test.rs"
 [[test]]
 name = "mmr_accumulator_test"
 path = "tests/mmr_accumulator.test.rs"
+
+[[test]]
+name = "oracle_hub_test"
+path = "tests/oracle_hub.test.rs"
+

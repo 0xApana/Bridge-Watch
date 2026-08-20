@@ -27,7 +27,9 @@ pub mod migration;
 #[cfg(test)]
 pub mod multisig_treasury;
 pub mod operator_rotation;
+pub mod oracle_hub;
 #[cfg(test)]
+
 pub mod rate_limiter;
 pub mod report_hash;
 #[cfg(test)]
