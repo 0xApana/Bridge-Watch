@@ -127,3 +127,30 @@ fn test_slash_oracle_node() {
     assert!(!info.is_active);
     assert_eq!(info.slash_count, 1);
 }
+
+#[test]
+fn test_submit_bft_aggregate_sybil_duplicate_nodes_rejected() {
+    let (env, client, admin, node1, node2, node3, node4) = setup_client();
+
+    client.register_oracle_node(&admin, &node1, &10);
+    client.register_oracle_node(&admin, &node2, &10);
+    client.register_oracle_node(&admin, &node3, &10);
+    client.register_oracle_node(&admin, &node4, &10);
+
+    let asset = String::from_str(&env, "USDT");
+    let reporting = vec![&env, node1.clone(), node1.clone(), node1.clone()];
+
+    let state = client.submit_bft_aggregate(
+        &admin,
+        &asset,
+        &100_000_000,
+        &100_000_000,
+        &1_000,
+        &reporting,
+    );
+
+    assert!(!state.is_valid_quorum);
+    assert_eq!(state.valid_count, 1);
+    assert_eq!(state.required_quorum, 3);
+}
+

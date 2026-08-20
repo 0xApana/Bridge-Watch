@@ -137,4 +137,19 @@ describe("BftOracleAggregatorService", () => {
     expect(result.weightedMedianPrice).toBe(105.0);
     expect(result.consensusPrice).toBeGreaterThan(100.0);
   });
+
+  it("deduplicates duplicate report submissions from the same provider key", async () => {
+    const nodes = generateNodes(4);
+    const reports: OracleReport[] = [
+      { providerKey: "oracle_node_1", price: 100.0, timestamp: new Date().toISOString() },
+      { providerKey: "oracle_node_1", price: 100.0, timestamp: new Date().toISOString() },
+      { providerKey: "oracle_node_1", price: 100.0, timestamp: new Date().toISOString() },
+    ];
+
+    const result = await service.aggregateBftState("USDC", reports, nodes);
+
+    expect(result.quorumReached).toBe(false);
+    expect(result.reportingProviders).toBe(1);
+  });
 });
+

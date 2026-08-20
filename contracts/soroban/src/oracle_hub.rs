@@ -197,7 +197,21 @@ pub fn submit_bft_aggregate(
     let required_quorum = calculate_required_quorum(total_active);
 
     let mut valid_count: u32 = 0;
+    let mut seen_nodes: Vec<Address> = Vec::new(env);
+
     for addr in reporting_nodes.iter() {
+        let mut is_duplicate = false;
+        for seen in seen_nodes.iter() {
+            if &seen == &addr {
+                is_duplicate = true;
+                break;
+            }
+        }
+        if is_duplicate {
+            continue;
+        }
+        seen_nodes.push_back(addr.clone());
+
         let node_key = OracleHubKey::Node(addr);
         if let Some(node) = env.storage().persistent().get::<_, BftOracleNode>(&node_key) {
             if node.is_active && !node.is_slashed {
@@ -205,6 +219,7 @@ pub fn submit_bft_aggregate(
             }
         }
     }
+
 
     let is_valid_quorum = valid_count >= required_quorum && required_quorum > 0;
     let now = env.ledger().timestamp();

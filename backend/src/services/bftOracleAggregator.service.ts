@@ -216,8 +216,14 @@ export class BftOracleAggregatorService {
       nodeMap.set(node.providerKey, node);
     }
 
+    const seenProviders = new Set<string>();
     const validReports: { report: OracleReport; node: OracleProviderNode }[] = [];
     for (const report of reports) {
+      if (seenProviders.has(report.providerKey)) {
+        continue;
+      }
+      seenProviders.add(report.providerKey);
+
       const node = nodeMap.get(report.providerKey) ?? {
         providerKey: report.providerKey,
         displayName: report.providerKey,
@@ -235,6 +241,7 @@ export class BftOracleAggregatorService {
         validReports.push({ report, node });
       }
     }
+
 
     const totalN = Math.max(nodes.length, reports.length);
     const f = Math.floor((totalN - 1) / 3);
