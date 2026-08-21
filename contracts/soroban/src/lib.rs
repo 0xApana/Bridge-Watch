@@ -41,6 +41,7 @@ pub mod source_trust;
 pub mod state_export;
 pub mod threshold_window;
 pub mod version_migration_helper;
+pub mod zk_verifier;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, Address, Bytes, BytesN, Env, String, Vec,
 };
