@@ -576,4 +576,27 @@ export interface BftSlashingEvent {
   created_at: Date;
 }
 
+export interface ZkProofVerificationRecord {
+  id: string;
+  bridge_id: string;
+  asset_code: string;
+  scheme: "groth16" | "plonk";
+  curve: "bn254" | "bls12_381";
+  total_reserves: string;
+  on_chain_supply: string;
+  reserve_ratio_bps: number;
+  commitment_hash: string;
+  proof_pi_a: string;
+  proof_pi_b: string;
+  proof_pi_c: string;
+  is_valid: boolean;
+  verification_status: "verified" | "rejected" | "submitted";
+  tx_hash: string | null;
+  attestation_id: string | null;
+  error_reason: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+
 

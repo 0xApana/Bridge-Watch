@@ -54,3 +54,8 @@ path = "tests/mmr_accumulator.test.rs"
 name = "oracle_hub_test"
 path = "tests/oracle_hub.test.rs"
 
+[[test]]
+name = "zk_verifier_test"
+path = "tests/zk_verifier.test.rs"
+
+
