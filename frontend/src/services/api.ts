@@ -37,6 +37,32 @@ import type {
 import type { LiquidityConcentrationData } from "../types/liquidity";
 const API_BASE_URL = "/api/v1";
 
+export type ApiVersion = "v1";
+export interface ApiContractSummary {
+  version: ApiVersion;
+  mediaType: string;
+  status: "current" | "deprecated";
+  fingerprint: string;
+  sunsetAt: string | null;
+}
+export interface ApiCapabilities {
+  version: ApiVersion;
+  fingerprint: string;
+  capabilities: Record<string, boolean>;
+}
+
+export async function getApiContract(version?: ApiVersion) {
+  return fetchApi<Record<string, unknown>>(`/compatibility/contract${version ? `?version=${version}` : ""}`);
+}
+
+export async function getApiCapabilities(version?: ApiVersion): Promise<ApiCapabilities> {
+  return fetchApi<ApiCapabilities>(`/compatibility/capabilities${version ? `?version=${version}` : ""}`);
+}
+
+export async function getApiVersions(): Promise<{ current: ApiVersion; versions: ApiContractSummary[] }> {
+  return fetchApi<{ current: ApiVersion; versions: ApiContractSummary[] }>("/compatibility/versions");
+}
+
 async function fetchApi<T>(
   endpoint: string,
   init?: RequestInit,

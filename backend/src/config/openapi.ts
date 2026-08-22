@@ -28,6 +28,7 @@ function resolveTagFromPath(url: string): string {
   if (url.startsWith("/api/v1/balances")) return "Assets";
   if (url.startsWith("/api/v1/webhooks")) return "Alerts";
   if (url.startsWith("/api/v1/admin")) return "Config";
+  if (url.startsWith("/api/v1/compatibility")) return "Compatibility";
   if (url.startsWith("/api/v1/health") || url.startsWith("/health")) return "Health";
   return "Config";
 }
@@ -168,6 +169,7 @@ least 90 days after a new version is released.
       { name: "Config", description: "Runtime configuration and feature flags" },
       { name: "Cache", description: "Redis cache inspection and invalidation" },
       { name: "Circuit Breaker", description: "Automated circuit-breaker pause controls" },
+      { name: "Compatibility", description: "Negotiated API contracts, capabilities, and versions" },
     ],
   },
   transform: ({ schema, url, route }) => {

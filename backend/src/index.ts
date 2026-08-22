@@ -24,6 +24,7 @@ import { registerCorrelationMiddleware } from "./api/middleware/correlation.midd
 import { registerRequestLoggingMiddleware } from "./api/middleware/logging.middleware.js";
 import { registerTracing } from "./api/middleware/tracing.js";
 import { getTelegramBotService } from "./services/telegram.bot.service.js";
+import { registerCompatibilityMiddleware } from "./api/compatibility/middleware.js";
 
 export async function buildServer() {
   const server = Fastify({
@@ -91,6 +92,8 @@ export async function buildServer() {
     },
     credentials: true,
   });
+
+  await registerCompatibilityMiddleware(server);
 
   // OpenAPI / Swagger — must be registered before routes so schemas are collected
   await server.register(swagger, swaggerOptions);
