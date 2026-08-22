@@ -3,10 +3,12 @@ import { incidentRoutes } from "../incidents.routes.js";
 import { incidentsRoutes } from "../incidents.js";
 import { incidentCorrelationRoutes } from "../incidentCorrelation.routes.js";
 import { incidentTimeline } from "../incidentTimeline.routes.js";
+import { causalGraphRoutes } from "../causalGraph.routes.js";
 
 export async function registerIncidentRoutes(server: FastifyInstance): Promise<void> {
   server.register(incidentRoutes, { prefix: "/api/v1/incidents" });
   server.register(incidentsRoutes, { prefix: "/api/v1/incidents-heatmap" });
   server.register(incidentCorrelationRoutes, { prefix: "/api/v1/incidents" });
   server.register(incidentTimeline, { prefix: "/api/v1/incidents" });
+  server.register(causalGraphRoutes, { prefix: "/api/v1/incidents" });
 }
