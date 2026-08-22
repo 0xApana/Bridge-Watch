@@ -13,6 +13,8 @@ import type {
   QueryContractParams,
   SdkHealth,
 } from "./types";
+import type { ApiCapabilities, ApiContract, ApiContractSummary, ApiVersion } from "./compatibility";
+import { compatibilityHeaders } from "./compatibility";
 
 export class BridgeWatchContractSdk {
   private readonly config: Required<BridgeWatchSdkConfig>;
@@ -25,11 +27,32 @@ export class BridgeWatchContractSdk {
       defaultFee: "100000",
       defaultTimeoutSeconds: 30,
       ...config,
+      apiUrl: config.apiUrl ?? config.rpcUrl,
     };
 
     this.server = new StellarSdk.rpc.Server(this.config.rpcUrl, {
       allowHttp: this.config.allowHttp,
     });
+  }
+
+  async getApiContract(version?: ApiVersion): Promise<ApiContract> {
+    return this.fetchCompatibility<ApiContract>(`/contract${version ? `?version=${version}` : ""}`, version);
+  }
+
+  async getApiCapabilities(version?: ApiVersion): Promise<ApiCapabilities> {
+    return this.fetchCompatibility<ApiCapabilities>("/capabilities", version);
+  }
+
+  async getApiVersions(): Promise<{ current: ApiVersion; versions: ApiContractSummary[] }> {
+    return this.fetchCompatibility<{ current: ApiVersion; versions: ApiContractSummary[] }>("/versions");
+  }
+
+  private async fetchCompatibility<T>(path: string, version?: ApiVersion): Promise<T> {
+    const response = await fetch(`${this.config.apiUrl.replace(/\/$/, "")}/api/v1/compatibility${path}`, {
+      headers: compatibilityHeaders(version),
+    });
+    if (!response.ok) throw new BridgeWatchConnectionError(`Compatibility request failed: ${response.status}`);
+    return response.json() as Promise<T>;
   }
 
   async connect(): Promise<SdkHealth> {

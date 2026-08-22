@@ -2,6 +2,7 @@ import type * as StellarSdk from "@stellar/stellar-sdk";
 
 export interface BridgeWatchSdkConfig {
   rpcUrl: string;
+  apiUrl?: string;
   contractId: string;
   networkPassphrase: string;
   allowHttp?: boolean;

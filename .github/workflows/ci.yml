@@ -77,6 +77,9 @@ jobs:
           printf 'install-dependencies\tnpm ci\tnpm-ci.log\n' >> "$COMMAND_LOG_DIR/COMMANDS.tsv"
           npm ci 2>&1 | tee "$COMMAND_LOG_DIR/npm-ci.log"
 
+      - name: Validate API compatibility contract
+        run: npm run check:api-contract
+
       - name: Lint backend
         run: |
           set -o pipefail
