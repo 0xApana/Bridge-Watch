@@ -2,7 +2,7 @@
 
 This document tracks all API changes, versioned updates, breaking changes, and migration notes for integrators.
 
-**Last Updated:** May 29, 2026
+**Last Updated:** August 24, 2026
 
 ---
 
@@ -13,6 +13,112 @@ This API follows semantic versioning: `MAJOR.MINOR.PATCH`
 - **MAJOR**: Breaking changes that require client updates
 - **MINOR**: New features and additions (backward compatible)
 - **PATCH**: Bug fixes and improvements (backward compatible)
+
+---
+
+## Version 1.6.0
+
+**Release Date:** August 24, 2026
+
+### New Features
+
+#### API Changelog Diff Viewer
+- **Endpoint**: `GET /api/v1/changelog/diff?from={version1}&to={version2}`
+- **Purpose**: Compare API versions and view changes between releases
+- **Response**: `{ fromVersion, toVersion, addedFeatures[], removedFeatures[], breakingChanges[], deprecated[] }`
+- **Authorization**: Public read
+
+#### Get All Changelog Versions
+- **Endpoint**: `GET /api/v1/changelog/versions`
+- **Purpose**: Retrieve list of all available API versions
+- **Response**: `{ versions: ChangelogVersion[] }`
+- **Authorization**: Public read
+
+#### Get Version Details
+- **Endpoint**: `GET /api/v1/changelog/versions/{version}`
+- **Purpose**: Get detailed information about a specific version
+- **Response**: Complete version metadata with all changes
+- **Authorization**: Public read
+
+#### Community Annotation Moderation
+- **Endpoint**: `POST /api/v1/moderation/{annotationId}/moderate`
+- **Purpose**: Review and approve/reject community annotations
+- **Request Body**: `{ action: "approve|reject|review", reason?: string, moderatorId: string }`
+- **Authorization**: Moderator role required
+
+#### Get Pending Review Annotations
+- **Endpoint**: `GET /api/v1/moderation/pending-reviews`
+- **Purpose**: Retrieve annotations awaiting moderation review
+- **Response**: `{ reviews: PendingAnnotation[] }`
+- **Authorization**: Moderator role required
+
+#### Get Moderation History
+- **Endpoint**: `GET /api/v1/moderation/{annotationId}/history`
+- **Purpose**: View audit trail of moderation actions on an annotation
+- **Response**: `{ history: ModerationLog[] }`
+- **Authorization**: Public read
+
+#### Public Dataset Registration
+- **Endpoint**: `POST /api/v1/datasets/register`
+- **Purpose**: Register new public dataset for publication
+- **Request Body**: `{ name, description, category, accessLevel }`
+- **Response**: `{ id, name, description, category, version, accessLevel }`
+- **Authorization**: Admin only
+
+#### Publish Dataset
+- **Endpoint**: `POST /api/v1/datasets/{datasetId}/publish`
+- **Purpose**: Publish dataset to public access
+- **Response**: `{ id, datasetId, status, retryCount }`
+- **Authorization**: Admin only
+
+#### Get Public Datasets
+- **Endpoint**: `GET /api/v1/datasets/public?limit=50&offset=0`
+- **Purpose**: List all publicly available datasets
+- **Response**: `{ datasets: PublicDataset[], limit, offset }`
+- **Authorization**: Public read
+
+#### Get Dataset Details
+- **Endpoint**: `GET /api/v1/datasets/{datasetId}`
+- **Purpose**: Retrieve detailed information about a dataset
+- **Response**: Complete dataset metadata
+- **Authorization**: Public read for public datasets
+
+#### Incident Evidence Search
+- **Endpoint**: `GET /api/v1/evidence/search?q=query&incidentId=INC&severity=high&tags=tag1,tag2`
+- **Purpose**: Full-text search incident evidence with filtering
+- **Response**: `{ results: EvidenceAnnotation[] }`
+- **Authorization**: Public read
+
+#### Add Evidence Annotation
+- **Endpoint**: `POST /api/v1/evidence/add`
+- **Purpose**: Create new evidence annotation for incident
+- **Request Body**: `{ incidentId, content, author, severity, tags[], evidenceType }`
+- **Response**: Complete annotation object
+- **Authorization**: Analyst role required
+
+#### Get Incident Evidence
+- **Endpoint**: `GET /api/v1/evidence/incidents/{incidentId}`
+- **Purpose**: Retrieve all evidence for specific incident
+- **Response**: `{ evidence: EvidenceAnnotation[] }`
+- **Authorization**: Public read
+
+#### Update Evidence Annotation
+- **Endpoint**: `PATCH /api/v1/evidence/{id}`
+- **Purpose**: Modify existing evidence annotation
+- **Request Body**: `{ content?, severity?, tags? }`
+- **Response**: Updated annotation object
+- **Authorization**: Author or admin only
+
+### Changes
+
+- All new endpoints are additive and backward compatible
+- New database tables added for changelog, moderation, datasets, and evidence
+- Enhanced full-text search capabilities for evidence discovery
+- Improved audit trail tracking for moderation activities
+
+### Backward Compatibility
+
+All new endpoints are additive. Existing endpoints (v1.0.0 - v1.5.0) remain unchanged and fully functional.
 
 ---
 
