@@ -109,12 +109,124 @@ This API follows semantic versioning: `MAJOR.MINOR.PATCH`
 - **Response**: Updated annotation object
 - **Authorization**: Author or admin only
 
+#### Database Query Performance Explorer
+- **Endpoint**: `POST /api/v1/queries/log`
+- **Purpose**: Log query execution performance metrics
+- **Request Body**: `{ queryHash, queryText, databaseName, executionTimeMs, rowsAffected?, rowsScanned?, status?, errorMessage? }`
+- **Authorization**: Internal service only
+
+- **Endpoint**: `GET /api/v1/queries/analyze/:queryHash`
+- **Purpose**: Analyze query performance and get recommendations
+- **Response**: `{ id, queryHash, avgExecutionTimeMs, maxExecutionTimeMs, executionCount, recommendations[] }`
+- **Authorization**: Public read
+
+- **Endpoint**: `GET /api/v1/queries/slow`
+- **Purpose**: List slow queries ordered by performance impact
+- **Response**: `{ queries: QueryAnalysis[], limit, offset }`
+- **Authorization**: Public read
+
+- **Endpoint**: `POST /api/v1/queries/alerts`
+- **Purpose**: Create performance alert
+- **Request Body**: `{ queryHash, alertType, severity, thresholdMs, currentMs, description }`
+- **Authorization**: Admin only
+
+- **Endpoint**: `GET /api/v1/queries/alerts`
+- **Purpose**: List active performance alerts
+- **Response**: `{ alerts: SlowQueryAlert[], limit, offset }`
+- **Authorization**: Public read
+
+#### Deployment Drift Visualization
+- **Endpoint**: `POST /api/v1/drift/snapshots`
+- **Purpose**: Capture environment configuration snapshot
+- **Request Body**: `{ environmentName, environmentType, snapshotVersion, configJson, deployedBy, deploymentTimestamp }`
+- **Authorization**: Admin only
+
+- **Endpoint**: `POST /api/v1/drift/detect`
+- **Purpose**: Detect configuration drift between environments
+- **Request Body**: `{ fromEnvironment, toEnvironment }`
+- **Response**: `{ id, fromEnvironment, toEnvironment, driftType, driftScore, changedFields[], severity }`
+- **Authorization**: Admin only
+
+- **Endpoint**: `GET /api/v1/drift/environments/:envName/drifts`
+- **Purpose**: List drifts for specific environment
+- **Response**: `{ drifts: DeploymentDrift[], limit, offset }`
+- **Authorization**: Public read
+
+- **Endpoint**: `GET /api/v1/drift/unapproved`
+- **Purpose**: List unapproved drift records
+- **Response**: `{ drifts: DeploymentDrift[], limit, offset }`
+- **Authorization**: Public read
+
+- **Endpoint**: `POST /api/v1/drift/:driftId/approve`
+- **Purpose**: Approve detected drift
+- **Request Body**: `{ approvedBy }`
+- **Authorization**: Admin only
+
+#### Artifact Provenance Verification
+- **Endpoint**: `POST /api/v1/artifacts/register`
+- **Purpose**: Register artifact with provenance information
+- **Request Body**: `{ artifactId, artifactName, artifactType, artifactHash, sourceRepository, sourceCommit, creatorId }`
+- **Authorization**: Service account only
+
+- **Endpoint**: `GET /api/v1/artifacts/:artifactId`
+- **Purpose**: Get artifact details and metadata
+- **Response**: Complete artifact provenance record
+- **Authorization**: Public read
+
+- **Endpoint**: `POST /api/v1/artifacts/:artifactId/actions`
+- **Purpose**: Record action in artifact chain (created, verified, signed, deployed, revoked)
+- **Request Body**: `{ action, actorId, signature? }`
+- **Authorization**: Service account only
+
+- **Endpoint**: `GET /api/v1/artifacts/:artifactId/chain`
+- **Purpose**: Get artifact audit trail/provenance chain
+- **Response**: `{ chain: ArtifactChainRecord[], limit, offset }`
+- **Authorization**: Public read
+
+- **Endpoint**: `POST /api/v1/artifacts/:artifactId/verify`
+- **Purpose**: Record artifact verification result
+- **Request Body**: `{ verificationType, status, findings[], riskLevel, verifiedBy }`
+- **Authorization**: Service account only
+
+- **Endpoint**: `GET /api/v1/artifacts/:artifactId/verifications`
+- **Purpose**: List all verifications for artifact
+- **Response**: `{ verifications: VerificationResult[], limit, offset }`
+- **Authorization**: Public read
+
+#### Release Compatibility Matrix
+- **Endpoint**: `POST /api/v1/compatibility`
+- **Purpose**: Create compatibility record between versions
+- **Request Body**: `{ sourceVersion, targetVersion, compatibilityStatus, migrationPathAvailable?, migrationGuideUrl?, breakingChanges[], deprecations[], testCoverage? }`
+- **Authorization**: Admin only
+
+- **Endpoint**: `GET /api/v1/compatibility/:sourceVersion/:targetVersion`
+- **Purpose**: Get compatibility record between two versions
+- **Response**: Complete compatibility record with breaking changes and deprecations
+- **Authorization**: Public read
+
+- **Endpoint**: `GET /api/v1/compatibility/matrix/:releaseVersion`
+- **Purpose**: Get compatibility matrix for a release
+- **Response**: `{ releaseVersion, compatibleVersions[], incompatibleVersions[], partialVersions[], overallScore }`
+- **Authorization**: Public read
+
+- **Endpoint**: `POST /api/v1/compatibility/tests`
+- **Purpose**: Record compatibility test result
+- **Request Body**: `{ sourceVersion, targetVersion, testId, testName, testCategory, status, executionTimeMs?, errorMessage? }`
+- **Authorization**: Service account only
+
+- **Endpoint**: `GET /api/v1/compatibility/tests/:sourceVersion/:targetVersion`
+- **Purpose**: Get test results for version pair
+- **Response**: `{ results: TestResult[], limit, offset }`
+- **Authorization**: Public read
+
 ### Changes
 
 - All new endpoints are additive and backward compatible
-- New database tables added for changelog, moderation, datasets, and evidence
-- Enhanced full-text search capabilities for evidence discovery
-- Improved audit trail tracking for moderation activities
+- New database tables added: query performance, drift tracking, artifact provenance, release compatibility
+- Enhanced monitoring and observability for system operations
+- Comprehensive audit trails for compliance and debugging
+- Improved deployment safety with drift detection
+- Supply chain security with artifact provenance tracking
 
 ### Backward Compatibility
 
