@@ -598,5 +598,27 @@ export interface ZkProofVerificationRecord {
   updated_at: Date;
 }
 
+export type RetentionExceptionTargetType = "all" | "mismatch" | "alert" | "report" | "export" | "asset";
+export type RetentionExceptionStatus = "active" | "expired" | "released";
+
+export interface ComplianceRetentionExceptionRecord {
+  id: string;
+  exception_code: string;
+  title: string;
+  reason: string;
+  requested_by: string;
+  target_type: RetentionExceptionTargetType;
+  target_id: string | null;
+  start_date: Date;
+  end_date: Date | null;
+  status: RetentionExceptionStatus;
+  released_by: string | null;
+  released_at: Date | null;
+  release_reason: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+
 
 
