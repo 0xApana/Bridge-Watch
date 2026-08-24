@@ -37,6 +37,10 @@ export const navGroups: NavGroup[] = [
       { to: "/bridge-health-timeline", label: "Health Timeline", description: "Bridge health score progression over time" },
       { to: "/asset-comparison", label: "Asset Matrix", description: "Compare multiple assets across key metrics" },
       { to: "/service-annotations", label: "Service Annotations", description: "Create and manage service annotations" },
+      { to: "/asset-exposure", label: "Asset Exposure", description: "Asset exposure concentration dashboard and HHI scoring" },
+      { to: "/transfer-sla", label: "Transfer SLA", description: "Bridge transfer latency SLA tracking and breach metrics" },
+      { to: "/data-quality", label: "Data Quality", description: "Configurable data quality scoring and dimension weightings" },
+      { to: "/provider-latency", label: "Provider Latency", description: "Side-by-side API and RPC provider latency comparison" },
     ],
   },
   {

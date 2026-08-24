@@ -3,6 +3,7 @@ import { assetsRoutes } from "../assets.js";
 import { assetMergeRoutes } from "../assetMerge.routes.js";
 import { assetFreshnessRoutes } from "../assetFreshness.routes.js";
 import { healthScoreHistoryRoutes } from "../healthScoreHistory.routes.js";
+import { assetExposureRoutes } from "../assetExposure.routes.js";
 
 export async function registerAssetRoutes(server: FastifyInstance): Promise<void> {
   server.register(assetsRoutes, { prefix: "/api/v1/assets" });
@@ -11,4 +12,5 @@ export async function registerAssetRoutes(server: FastifyInstance): Promise<void
   server.register(healthScoreHistoryRoutes, {
     prefix: "/api/v1/health-score-history",
   });
+  server.register(assetExposureRoutes, { prefix: "/api/v1/asset-exposure" });
 }

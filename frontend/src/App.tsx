@@ -47,6 +47,10 @@ const FreshnessMonitoring = lazy(() => import("./pages/FreshnessMonitoring"));
 const ServiceAnnotations = lazy(() => import("./pages/ServiceAnnotations"));
 const CircuitBreakerActions = lazy(() => import("./pages/CircuitBreakerActions"));
 const LiquidityConcentration = lazy(() => import("./pages/LiquidityConcentration"));
+const AssetExposureConcentration = lazy(() => import("./pages/AssetExposureConcentration"));
+const BridgeTransferSLATracking = lazy(() => import("./pages/BridgeTransferSLATracking"));
+const DataQualityScoring = lazy(() => import("./pages/DataQualityScoring"));
+const ProviderLatencyComparison = lazy(() => import("./pages/ProviderLatencyComparison"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -115,6 +119,10 @@ function App() {
               <Route path="/service-annotations" element={<ServiceAnnotations />} />
               <Route path="/circuit-breaker-actions" element={<CircuitBreakerActions />} />
               <Route path="/liquidity-concentration" element={<LiquidityConcentration />} />
+              <Route path="/asset-exposure" element={<AssetExposureConcentration />} />
+              <Route path="/transfer-sla" element={<BridgeTransferSLATracking />} />
+              <Route path="/data-quality" element={<DataQualityScoring />} />
+              <Route path="/provider-latency" element={<ProviderLatencyComparison />} />
             </Route>
           </Routes>
         </Suspense>
