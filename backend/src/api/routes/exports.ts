@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { ExportService } from "../../services/export.service.js";
+import { exportIntegrityRoutes } from "./exportIntegrity.routes.js";
 import { logger } from "../../utils/logger.js";
 
 export async function exportsRoutes(server: FastifyInstance) {
@@ -108,4 +109,7 @@ export async function exportsRoutes(server: FastifyInstance) {
       });
     }
   });
+
+  server.register(exportIntegrityRoutes, { prefix: "/api/v1" });
 }
+
