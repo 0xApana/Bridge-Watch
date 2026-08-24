@@ -619,6 +619,22 @@ export interface ComplianceRetentionExceptionRecord {
   updated_at: Date;
 }
 
+export interface ReportTemplateVersionRecord {
+  id: string;
+  template_id: string;
+  version: number;
+  name: string;
+  type: string;
+  description: string;
+  sections: unknown;
+  includes: unknown;
+  filters: unknown;
+  change_summary: string | null;
+  created_by: string;
+  created_at: Date;
+}
+
+
 
 
 

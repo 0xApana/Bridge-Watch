@@ -8,6 +8,7 @@ import {
 } from "../../services/complianceReportGenerator.service.js";
 import { authMiddleware } from "../middleware/auth.js";
 import { complianceRetentionExceptionRoutes } from "./complianceRetentionExceptions.routes.js";
+import { reportTemplateVersionRoutes } from "./reportTemplateVersion.routes.js";
 
 interface CreateReportTemplateBody {
   name: string;
@@ -319,5 +320,6 @@ export async function complianceReportRoutes(server: FastifyInstance) {
   );
 
   server.register(complianceRetentionExceptionRoutes, { prefix: "/api/v1" });
+  server.register(reportTemplateVersionRoutes);
 }
 
