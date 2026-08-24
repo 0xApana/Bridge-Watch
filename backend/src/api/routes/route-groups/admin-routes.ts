@@ -9,6 +9,7 @@ import { accessOverviewRoutes } from "../accessOverview.routes.js";
 import { operationalAccessAuditRoutes } from "../operationalAccessAudit.js";
 import { providerAllowlistAdminRoutes } from "../providerAllowlistAdmin.routes.js";
 import { eventSourceKeyRoutes } from "../eventSourceKeys.routes.js";
+import { operatorHandoffRoutes } from "../operatorHandoff.routes.js";
 
 export async function registerAdminRoutes(server: FastifyInstance): Promise<void> {
   server.register(apiKeysRoutes, { prefix: "/api/v1/admin/api-keys" });
@@ -31,4 +32,8 @@ export async function registerAdminRoutes(server: FastifyInstance): Promise<void
   server.register(eventSourceKeyRoutes, {
     prefix: "/api/v1/admin/event-source-keys",
   });
+  server.register(operatorHandoffRoutes, {
+    prefix: "/api/v1/operator",
+  });
 }
+

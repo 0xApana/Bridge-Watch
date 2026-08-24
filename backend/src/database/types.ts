@@ -634,6 +634,35 @@ export interface ReportTemplateVersionRecord {
   created_at: Date;
 }
 
+export type HandoffStatus = "draft" | "submitted" | "acknowledged" | "archived";
+
+export interface HandoffChecklistItem {
+  id: string;
+  label: string;
+  category: "incidents" | "circuit_breakers" | "maintenance" | "health_checks" | "general";
+  completed: boolean;
+  notes?: string;
+  verified_by?: string;
+}
+
+export interface OperatorHandoffRecord {
+  id: string;
+  shift_name: string;
+  outgoing_operator: string;
+  incoming_operator: string;
+  status: HandoffStatus;
+  checklist_items: HandoffChecklistItem[] | string;
+  summary_notes: string | null;
+  incidents_reviewed: string[] | string;
+  signoff_outgoing_signature: string | null;
+  signoff_incoming_signature: string | null;
+  submitted_at: Date | null;
+  acknowledged_at: Date | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+
 
 
 
