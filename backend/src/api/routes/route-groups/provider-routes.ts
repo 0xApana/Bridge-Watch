@@ -3,6 +3,7 @@ import { providerHealthRegistryRoutes } from "../providerHealthRegistry.routes.j
 import { providerAllowlistRoutes } from "../providerAllowlist.routes.js";
 import { providerCircuitBreakerRoutes } from "../providerCircuitBreaker.routes.js";
 import { bftOracleRoutes } from "../bftOracle.routes.js";
+import { providerLatencyRoutes } from "../providerLatency.routes.js";
 
 export async function registerProviderRoutes(server: FastifyInstance): Promise<void> {
   server.register(providerHealthRegistryRoutes, {
@@ -16,6 +17,9 @@ export async function registerProviderRoutes(server: FastifyInstance): Promise<v
   });
   server.register(bftOracleRoutes, {
     prefix: "/api/v1/bft-oracle",
+  });
+  server.register(providerLatencyRoutes, {
+    prefix: "/api/v1/provider-latency",
   });
 }
 
