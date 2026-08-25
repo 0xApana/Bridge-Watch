@@ -16,6 +16,7 @@ import { registerAnomalyRoutes } from "./route-groups/anomaly-routes.js";
 import { registerAutomationRoutes } from "./route-groups/automation-routes.js";
 import { registerUtilityRoutes } from "./route-groups/utility-routes.js";
 import { registerCompatibilityRoutes } from "./route-groups/compatibility-routes.js";
+import { registerOperationalRoutes } from "./route-groups/operational-routes.js";
 
 export async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Core routes: health, websocket, config, preferences, caching
@@ -59,6 +60,9 @@ export async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // Automation: rules, evaluator, playbooks, cleanup
   await registerAutomationRoutes(server);
+
+  // Operational control plane: approvals, error catalog, and request sampling
+  await registerOperationalRoutes(server);
 
   // Administrative functions
   await registerAdminRoutes(server);
