@@ -6,7 +6,7 @@ import Analytics from "./Analytics";
 
 // Mock the TimeRangeSelector component
 vi.mock("../components/TimeRangeSelector", () => ({
-  TimeRangeSelector: ({ chartId, title, showApplyGlobally }: any) => (
+  TimeRangeSelector: ({ chartId, title, showApplyGlobally }: { chartId?: string; title?: string; showApplyGlobally?: boolean }) => (
     <div data-testid="time-range-selector">
       <span>Chart ID: {chartId}</span>
       <span>Title: {title}</span>
@@ -21,7 +21,7 @@ vi.mock("../components/ColorPreviewTool", () => ({
 }));
 
 vi.mock("../components/MetricsDrilldown", () => ({
-  MetricsDrilldown: ({ isOpen, onClose, title }: any) => 
+  MetricsDrilldown: ({ isOpen, onClose, title }: { isOpen?: boolean; onClose?: () => void; title?: string }) => 
     isOpen ? (
       <div data-testid="metrics-drilldown">
         <span>{title}</span>
