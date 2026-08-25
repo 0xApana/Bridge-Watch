@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { mockCoreApi } from "../utils/mockApi";
 
 test("operator can preview a config rollback without applying it", async ({ page }) => {
   await page.addInitScript(() => {
@@ -8,6 +9,8 @@ test("operator can preview a config rollback without applying it", async ({ page
       JSON.stringify({ completed: true, lastStep: 0, seen: true })
     );
   });
+
+  await mockCoreApi(page);
 
   await page.route("**/api/v1/admin/configs/staging/RATE_LIMIT_MAX/rollback-preview", async (route) => {
     expect(route.request().method()).toBe("POST");
