@@ -4,21 +4,21 @@ import {
   topologicalSort,
   getReadyTasks,
   criticalPathLength,
-} from "../backfill/planner.js";
-import { planTaskChunks, planAllTaskChunks } from "../backfill/chunkPlanner.js";
-import { CapacityReservation } from "../backfill/capacityReservation.js";
+} from "../../src/backfill/planner.js";
+import { planTaskChunks, planAllTaskChunks } from "../../src/backfill/chunkPlanner.js";
+import { CapacityReservation } from "../../src/backfill/capacityReservation.js";
 import {
   validateCompleteness,
   verifyOutput,
   detectProviderLimits,
-} from "../backfill/validation.js";
+} from "../../src/backfill/validation.js";
 import {
   createBackfillPlan,
   explainPlan,
   checkCompleteness,
-} from "../backfill/orchestrator.js";
-import { BackfillScheduler, LeaseManager } from "../backfill/scheduler.js";
-import type { BackfillTask, ScheduledChunk } from "../backfill/types.js";
+} from "../../src/backfill/orchestrator.js";
+import { BackfillScheduler, LeaseManager } from "../../src/backfill/scheduler.js";
+import type { BackfillTask, ScheduledChunk } from "../../src/backfill/types.js";
 
 const sampleTasks: BackfillTask[] = [
   {
@@ -337,12 +337,15 @@ describe("Backfill Orchestrator", () => {
       reservedForLive: 30,
     });
 
-    const completed = result.plan.scheduledChunks.filter(
+    const allPricesChunks = result.plan.scheduledChunks.filter(
       (c) => c.taskId === "prices"
     );
-    completed.forEach((c) => (c.status = "completed"));
+    // Mark only the first chunk as completed
+    if (allPricesChunks.length > 0) {
+      allPricesChunks[0].status = "completed";
+    }
 
-    const report = checkCompleteness(sampleTasks, completed);
+    const report = checkCompleteness(sampleTasks, allPricesChunks.filter(c => c.status === "completed"));
     expect(report.isComplete).toBe(false);
     expect(report.missingRanges.length).toBeGreaterThan(0);
   });
