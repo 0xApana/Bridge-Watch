@@ -1,6 +1,14 @@
 import { expect, test } from "@playwright/test";
 
 test("operator can preview a config rollback without applying it", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("bridge-watch:onboarding:v1", "true");
+    window.localStorage.setItem(
+      "bridge-watch:dashboard-tour:v1",
+      JSON.stringify({ completed: true, lastStep: 0, seen: true })
+    );
+  });
+
   await page.route("**/api/v1/admin/configs/staging/RATE_LIMIT_MAX/rollback-preview", async (route) => {
     expect(route.request().method()).toBe("POST");
     await route.fulfill({
