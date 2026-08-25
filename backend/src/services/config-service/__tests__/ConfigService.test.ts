@@ -376,7 +376,7 @@ describe("ConfigService", () => {
         "Bulk import"
       );
 
-      expect(mockDb.insert).toHaveBeenCalledTimes(4); // 2 configs + 2 audits
+      expect(mockDb.insert).toHaveBeenCalledTimes(6); // 2 configs + 2 audits + 2 revisions
     });
   });
 

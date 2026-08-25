@@ -10,8 +10,10 @@ import { operationalAccessAuditRoutes } from "../operationalAccessAudit.js";
 import { providerAllowlistAdminRoutes } from "../providerAllowlistAdmin.routes.js";
 import { eventSourceKeyRoutes } from "../eventSourceKeys.routes.js";
 import { operatorHandoffRoutes } from "../operatorHandoff.routes.js";
+import { adminConfigRoutes } from "../admin/configs.js";
 
 export async function registerAdminRoutes(server: FastifyInstance): Promise<void> {
+  server.register(adminConfigRoutes, { prefix: "/api/v1/admin/configs" });
   server.register(apiKeysRoutes, { prefix: "/api/v1/admin/api-keys" });
   server.register(rateLimitAdminRoutes, { prefix: "/api/v1/admin/rate-limit" });
   server.register(tracingAdminRoutes, { prefix: "/api/v1/admin/tracing" });

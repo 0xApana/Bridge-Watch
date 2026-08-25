@@ -10,6 +10,7 @@ import { useToast } from "../context/ToastContextValue";
 import { useNotificationContext } from "../hooks/useNotificationContext";
 import { useThemeStore, selectDensity } from "../stores/themeStore";
 import { Tabs, TabList, Tab, TabPanel } from "../components/Tabs";
+import ConfigRollbackPreview from "../components/settings/ConfigRollbackPreview";
 
 const refreshOptions = [
   { value: 30000, label: "30s" },
@@ -93,6 +94,8 @@ export default function Settings() {
           <AlertSuppressionControls />
 
           <ThemePresetsSection />
+
+          <ConfigRollbackPreview />
 
           <section
             className="rounded-xl border border-stellar-border bg-stellar-card p-6 space-y-6"

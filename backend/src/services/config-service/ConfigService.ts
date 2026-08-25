@@ -37,6 +37,7 @@ interface ConfigEntry {
   created_at: Date;
   changed_by: string | null;
   changed_at: Date | null;
+  current_revision: number;
 }
 
 interface ConfigAuditEntry {
@@ -54,6 +55,41 @@ interface SetConfigOptions {
   description?: string;
   changeReason?: string;
   changedBy: string;
+}
+
+interface ConfigRevisionEntry {
+  config_id: number;
+  environment: string;
+  key: string;
+  revision: number;
+  value: any;
+  encrypted: boolean;
+  validated: boolean;
+  created_by: string;
+  change_reason: string;
+  created_at: Date;
+}
+
+export interface ConfigRollbackPreview {
+  environment: string;
+  key: ConfigKey;
+  currentRevision: number;
+  targetRevision: number;
+  changed: boolean;
+  sensitive: boolean;
+  currentValue: unknown;
+  targetValue: unknown;
+  targetCreatedAt: Date;
+  targetCreatedBy: string;
+  targetChangeReason: string;
+  validation: { valid: true } | { valid: false; errors: string[] };
+}
+
+export class ConfigRevisionConflictError extends Error {
+  constructor(currentRevision: number) {
+    super(`Configuration changed since it was loaded; current revision is ${currentRevision}`);
+    this.name = "ConfigRevisionConflictError";
+  }
 }
 
 export class ConfigService {
@@ -212,6 +248,7 @@ export class ConfigService {
         let configId: number;
 
         if (existing) {
+          const nextRevision = (existing.current_revision ?? 1) + 1;
           // Update existing config
           await trx<ConfigEntry>("configs")
             .where({ id: existing.id })
@@ -223,6 +260,7 @@ export class ConfigService {
               description: options.description || existing.description,
               changed_by: changedBy,
               changed_at: trx.fn.now(),
+              current_revision: nextRevision,
             });
 
           configId = existing.id;
@@ -233,6 +271,18 @@ export class ConfigService {
             old_value: existing.value,
             new_value: storedValue,
             changed_by: changedBy,
+            change_reason: changeReason,
+          });
+
+          await trx<ConfigRevisionEntry>("config_revisions").insert({
+            config_id: configId,
+            environment,
+            key: key as string,
+            revision: nextRevision,
+            value: storedValue,
+            encrypted: shouldEncrypt,
+            validated: true,
+            created_by: changedBy,
             change_reason: changeReason,
           });
 
@@ -254,6 +304,7 @@ export class ConfigService {
               created_by: changedBy,
               changed_by: changedBy,
               changed_at: trx.fn.now(),
+              current_revision: 1,
             })
             .returning("id");
 
@@ -265,6 +316,18 @@ export class ConfigService {
             old_value: null,
             new_value: storedValue,
             changed_by: changedBy,
+            change_reason: changeReason,
+          });
+
+          await trx<ConfigRevisionEntry>("config_revisions").insert({
+            config_id: configId,
+            environment,
+            key: key as string,
+            revision: 1,
+            value: storedValue,
+            encrypted: shouldEncrypt,
+            validated: true,
+            created_by: changedBy,
             change_reason: changeReason,
           });
 
@@ -281,6 +344,70 @@ export class ConfigService {
       logger.error({ error, key, environment }, "Failed to set config");
       throw error;
     }
+  }
+
+  /**
+   * Compare the current value with a historical revision without mutating state.
+   */
+  async previewRollback(
+    key: ConfigKey,
+    environment: string,
+    targetRevision: number,
+    expectedCurrentRevision?: number
+  ): Promise<ConfigRollbackPreview> {
+    const current = await this.db<ConfigEntry>("configs")
+      .where({ environment, key: key as string })
+      .first();
+
+    if (!current) {
+      throw new Error(`Config ${key} not found in ${environment}`);
+    }
+    if (
+      expectedCurrentRevision !== undefined &&
+      expectedCurrentRevision !== current.current_revision
+    ) {
+      throw new ConfigRevisionConflictError(current.current_revision);
+    }
+
+    const target = await this.db<ConfigRevisionEntry>("config_revisions")
+      .where({ config_id: current.id, revision: targetRevision })
+      .first();
+    if (!target) {
+      throw new Error(`Revision ${targetRevision} not found for ${key} in ${environment}`);
+    }
+
+    const currentValue = current.encrypted ? this.decrypt(current.value) : current.value;
+    const targetValue = target.encrypted ? this.decrypt(target.value) : target.value;
+    const validation = safeValidateConfig(key, targetValue);
+    const validationSummary = validation.success
+      ? { valid: true as const }
+      : {
+          valid: false as const,
+          errors: (validation as { success: false; error: import("zod").ZodError }).error.issues.map(
+            (issue) => issue.message
+          ),
+        };
+    const sensitive = isSensitiveKey(key);
+
+    logger.info(
+      { key, environment, currentRevision: current.current_revision, targetRevision },
+      "Config rollback preview generated"
+    );
+
+    return {
+      environment,
+      key,
+      currentRevision: current.current_revision,
+      targetRevision,
+      changed: JSON.stringify(currentValue) !== JSON.stringify(targetValue),
+      sensitive,
+      currentValue: sensitive ? "[REDACTED]" : currentValue,
+      targetValue: sensitive ? "[REDACTED]" : targetValue,
+      targetCreatedAt: target.created_at,
+      targetCreatedBy: target.created_by,
+      targetChangeReason: target.change_reason,
+      validation: validationSummary,
+    };
   }
 
   /**

@@ -51,6 +51,38 @@ export interface ApiCapabilities {
   capabilities: Record<string, boolean>;
 }
 
+export interface ConfigRollbackPreview {
+  environment: string;
+  key: string;
+  currentRevision: number;
+  targetRevision: number;
+  changed: boolean;
+  sensitive: boolean;
+  currentValue: unknown;
+  targetValue: unknown;
+  targetCreatedAt: string;
+  targetCreatedBy: string;
+  targetChangeReason: string;
+  validation: { valid: boolean; errors?: string[] };
+}
+
+export function previewConfigRollback(
+  environment: string,
+  key: string,
+  targetRevision: number,
+  apiKey: string,
+  expectedCurrentRevision?: number
+) {
+  return fetchApi<{ preview: ConfigRollbackPreview }>(
+    `/admin/configs/${encodeURIComponent(environment)}/${encodeURIComponent(key)}/rollback-preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({ targetRevision, expectedCurrentRevision }),
+    },
+    apiKey
+  );
+}
+
 export async function getApiContract(version?: ApiVersion) {
   return fetchApi<Record<string, unknown>>(`/compatibility/contract${version ? `?version=${version}` : ""}`);
 }

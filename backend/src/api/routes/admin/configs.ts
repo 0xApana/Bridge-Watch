@@ -4,6 +4,8 @@ import { createRedisClient } from "../../../config/redis.js";
 import { ConfigService } from "../../../services/config-service/ConfigService.js";
 import { ConfigKey } from "../../../services/config-service/validators.js";
 import type Redis from "ioredis";
+import { authMiddleware } from "../../middleware/auth.js";
+import { ConfigRevisionConflictError } from "../../../services/config-service/ConfigService.js";
 
 /**
  * Admin API Routes for Configuration Service
@@ -30,6 +32,64 @@ function getConfigService(): ConfigService {
 }
 
 export async function adminConfigRoutes(server: FastifyInstance) {
+  const requireConfigAdmin = authMiddleware({ requiredScopes: ["admin:config"] });
+
+  server.post<{
+    Params: { environment: string; key: string };
+    Body: { targetRevision: number; expectedCurrentRevision?: number };
+  }>(
+    "/:environment/:key/rollback-preview",
+    {
+      preHandler: requireConfigAdmin,
+      schema: {
+        tags: ["Admin", "Config"],
+        summary: "Preview a configuration rollback",
+        description: "Compares a historical revision with the current value without changing configuration state.",
+        security: [{ ApiKeyAuth: [] }],
+        params: {
+          type: "object",
+          required: ["environment", "key"],
+          properties: {
+            environment: { type: "string", enum: ["global", "dev", "staging", "prod-us-east", "prod-eu-west"] },
+            key: { type: "string" },
+          },
+        },
+        body: {
+          type: "object",
+          additionalProperties: false,
+          required: ["targetRevision"],
+          properties: {
+            targetRevision: { type: "integer", minimum: 1 },
+            expectedCurrentRevision: { type: "integer", minimum: 1 },
+          },
+        },
+        response: {
+          200: { type: "object", additionalProperties: true },
+          404: { type: "object", additionalProperties: true },
+          409: { type: "object", additionalProperties: true },
+          422: { type: "object", additionalProperties: true },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const preview = await getConfigService().previewRollback(
+          request.params.key as ConfigKey,
+          request.params.environment,
+          request.body.targetRevision,
+          request.body.expectedCurrentRevision
+        );
+        return reply.code(preview.validation.valid ? 200 : 422).send({ preview });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to preview rollback";
+        if (error instanceof ConfigRevisionConflictError) {
+          return reply.code(409).send({ error: "Revision conflict", message });
+        }
+        return reply.code(404).send({ error: "Rollback target not found", message });
+      }
+    }
+  );
+
   /**
    * GET /admin/configs/:environment
    * Get all configurations for an environment, or a specific key
