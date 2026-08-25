@@ -25,9 +25,10 @@ test("operator can preview a config rollback without applying it", async ({ page
   });
 
   await page.goto("/settings");
-  await page.getByLabel("Config key").fill("RATE_LIMIT_MAX");
-  await page.getByLabel("Admin API key").fill("test-admin-key");
-  await page.getByRole("button", { name: "Generate preview" }).click();
+  const preview = page.locator('section[aria-labelledby="rollback-preview-heading"]');
+  await preview.getByLabel("Config key").fill("RATE_LIMIT_MAX");
+  await preview.getByLabel("Admin API key").fill("test-admin-key");
+  await preview.getByRole("button", { name: "Generate preview" }).click();
 
   await expect(page.getByText("Revision 3 to 1")).toBeVisible();
   await expect(page.getByText("Valid rollback target")).toBeVisible();
