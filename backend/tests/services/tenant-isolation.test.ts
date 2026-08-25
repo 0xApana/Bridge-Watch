@@ -3,20 +3,20 @@ import {
   runWithTenant,
   getTenantContext,
   runAsSystem,
-} from "../multi-tenant/tenantContext.js";
+} from "../../src/multi-tenant/tenantContext.js";
 import {
   isTenantScopedTable,
   assertTenantMatch,
   tenantFilter,
   TenantViolationError,
-} from "../multi-tenant/tenantGuard.js";
+} from "../../src/multi-tenant/tenantGuard.js";
 import {
   tenantCacheKey,
-} from "../multi-tenant/tenantCache.js";
+} from "../../src/multi-tenant/tenantCache.js";
 import {
   withTenantJobContext,
   validateJobHasTenantContext,
-} from "../multi-tenant/tenantJobGuard.js";
+} from "../../src/multi-tenant/tenantJobGuard.js";
 
 const TENANT_A = "tenant-alpha";
 const TENANT_B = "tenant-beta";

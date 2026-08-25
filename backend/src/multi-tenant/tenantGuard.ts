@@ -15,6 +15,7 @@ const TENANT_TABLES = new Set([
   "notification_channels",
   "notification_digests",
   "saved_metrics",
+  "audit_logs",
 ]);
 
 export function isTenantScopedTable(table: string): boolean {
