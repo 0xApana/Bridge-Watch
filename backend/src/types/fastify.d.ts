@@ -1,4 +1,5 @@
 import "fastify";
+import type { TenantContext } from "../multi-tenant/tenantContext.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -9,6 +10,7 @@ declare module "fastify" {
       rateLimitPerMinute: number;
       source: "api-key" | "bootstrap";
     };
+    tenantContext?: TenantContext;
   }
 
   interface FastifySchema {
