@@ -4,6 +4,7 @@ import { rollbackReadinessRoutes } from "../rollbackReadiness.routes.js";
 import { canaryMetricRoutes } from "../canaryMetric.routes.js";
 import { promotionGatesRoutes } from "../promotionGates.routes.js";
 import { riskClusteringRoutes } from "../riskClustering.routes.js";
+import { trustlineAnalyticsRoutes } from "../trustlineAnalytics.routes.js";
 
 export async function registerOperationalRoutes(server: FastifyInstance): Promise<void> {
   server.register(slowQueryRegressionRoutes);
@@ -11,4 +12,5 @@ export async function registerOperationalRoutes(server: FastifyInstance): Promis
   server.register(canaryMetricRoutes);
   server.register(promotionGatesRoutes);
   server.register(riskClusteringRoutes, { prefix: "/api/v1" });
+  server.register(trustlineAnalyticsRoutes, { prefix: "/api/v1" });
 }
