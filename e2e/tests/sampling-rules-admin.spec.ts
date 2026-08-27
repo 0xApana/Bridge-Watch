@@ -1,91 +1,92 @@
 import { test, expect } from "@playwright/test";
 import { mockCoreApi } from "../utils/mockApi";
 
-test.describe("Sampling Rules Admin Page", () => {
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      window.localStorage.setItem("bridge-watch:onboarding:v1", "true");
-      window.localStorage.setItem(
-        "bridge-watch:dashboard-tour:v1",
-        JSON.stringify({ completed: true, lastStep: 0, seen: true }),
-      );
-      window.localStorage.setItem(
-        "bridge-watch:admin-api-key:v1",
-        "test-admin-token",
-      );
-    });
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("bridge-watch:onboarding:v1", "true");
+    window.localStorage.setItem(
+      "bridge-watch:dashboard-tour:v1",
+      JSON.stringify({ completed: true, lastStep: 0, seen: true }),
+    );
+    window.localStorage.setItem(
+      "bridge-watch:admin-api-key:v1",
+      "test-admin-token",
+    );
+  });
 
-    await mockCoreApi(page);
+  await mockCoreApi(page);
 
-    // Mock sampling rules API
-    await page.route("**/api/v1/admin/sampling-rules**", async (route) => {
-      const method = route.request().method();
-      const url = route.request().url();
+  // Mock sampling rules API
+  await page.route("**/api/v1/admin/sampling-rules**", async (route) => {
+    const method = route.request().method();
+    const url = route.request().url();
 
-      if (method === "GET" && !url.includes("/rules/")) {
-        await route.fulfill({
-          status: 200,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            rules: [
-              {
-                id: "rule-001",
-                name: "High traffic sampling",
-                description: "Sample 10% of all requests during peak hours",
-                sampleRate: 0.1,
-                target: "all_requests",
-                targetValue: null,
-                enabled: true,
-                priority: 0,
-                createdBy: "admin",
-                createdAt: "2026-08-20T10:00:00Z",
-                updatedAt: "2026-08-20T10:00:00Z",
-              },
-              {
-                id: "rule-002",
-                name: "Slow request sampling",
-                description: "Sample 50% of slow requests",
-                sampleRate: 0.5,
-                target: "endpoint",
-                targetValue: "/api/v1/transactions",
-                enabled: false,
-                priority: 1,
-                createdBy: "admin",
-                createdAt: "2026-08-21T12:00:00Z",
-                updatedAt: "2026-08-21T12:00:00Z",
-              },
-            ],
-          }),
-        });
-      } else if (method === "POST") {
-        await route.fulfill({
-          status: 201,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            rule: {
-              id: "rule-003",
-              name: "New Rule",
-              description: null,
-              sampleRate: 0.25,
+    if (method === "GET" && !url.includes("/rules/")) {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rules: [
+            {
+              id: "rule-001",
+              name: "High traffic sampling",
+              description: "Sample 10% of all requests during peak hours",
+              sampleRate: 0.1,
               target: "all_requests",
               targetValue: null,
               enabled: true,
-              priority: 2,
+              priority: 0,
               createdBy: "admin",
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
+              createdAt: "2026-08-20T10:00:00Z",
+              updatedAt: "2026-08-20T10:00:00Z",
             },
-          }),
-        });
-      } else if (method === "DELETE") {
-        await route.fulfill({
-          status: 200,
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message: "Deleted" }),
-        });
-      }
-    });
+            {
+              id: "rule-002",
+              name: "Slow request sampling",
+              description: "Sample 50% of slow requests",
+              sampleRate: 0.5,
+              target: "endpoint",
+              targetValue: "/api/v1/transactions",
+              enabled: false,
+              priority: 1,
+              createdBy: "admin",
+              createdAt: "2026-08-21T12:00:00Z",
+              updatedAt: "2026-08-21T12:00:00Z",
+            },
+          ],
+        }),
+      });
+    } else if (method === "POST") {
+      await route.fulfill({
+        status: 201,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          rule: {
+            id: "rule-003",
+            name: "New Rule",
+            description: null,
+            sampleRate: 0.25,
+            target: "all_requests",
+            targetValue: null,
+            enabled: true,
+            priority: 2,
+            createdBy: "admin",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        }),
+      });
+    } else if (method === "DELETE") {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Deleted" }),
+      });
+    }
   });
+});
+
+test.describe("Sampling Rules Admin Page", () => {
 
   test("loads sampling rules admin page successfully", async ({ page }) => {
     await page.goto("/admin/sampling-rules");
