@@ -1,4 +1,5 @@
 import "fastify";
+import type { TenantContext } from "../multi-tenant/tenantContext.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -15,6 +16,7 @@ declare module "fastify" {
      * false = request is excluded from sampling and should skip expensive telemetry.
      */
     samplingDecision?: boolean;
+    tenantContext?: TenantContext;
   }
 
   interface FastifySchema {
