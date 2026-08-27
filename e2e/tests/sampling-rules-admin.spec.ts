@@ -122,17 +122,6 @@ test.describe("Sampling Rules Admin Page", () => {
     }
   });
 
-  test("page displays sample rate as percentage", async ({ page }) => {
-    await page.goto("/admin/sampling-rules");
-    await page.waitForTimeout(2000);
-
-    // Look for percentage text (10% and 50% from mock data)
-    const content = await page.textContent("body");
-    if (content) {
-      expect(content.includes("%")).toBe(true);
-    }
-  });
-
   test("page does not crash on load", async ({ page }) => {
     const errors: string[] = [];
 

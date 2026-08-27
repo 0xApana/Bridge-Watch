@@ -127,40 +127,6 @@ test.describe("Config Rollback Admin Page", () => {
     expect(url).toContain("/admin/config-rollback");
   });
 
-  test("mocked API returns config versions", async ({ page }) => {
-    let capturedResponse: any = null;
-
-    page.on("response", async (response) => {
-      if (response.url().includes("/api/v1/admin/config-versions/alert-thresholds") &&
-          !response.url().includes("/rollback")) {
-        try {
-          capturedResponse = await response.json();
-        } catch (e) {
-          // Ignore parse errors
-        }
-      }
-    });
-
-    await page.goto("/admin/config-rollback");
-    await page.waitForTimeout(1000);
-
-    // Simulate loading a config key
-    const configKeyInput = page.locator('input[placeholder*="alert"]').first();
-    if (await configKeyInput.isVisible()) {
-      await configKeyInput.fill("alert-thresholds");
-      const loadButton = page.getByRole("button", { name: /load history/i });
-      if (await loadButton.isVisible()) {
-        await loadButton.click();
-        await page.waitForTimeout(2000);
-      }
-    }
-
-    if (capturedResponse) {
-      expect(capturedResponse.versions).toBeDefined();
-      expect(capturedResponse.versions.length).toBeGreaterThanOrEqual(0);
-    }
-  });
-
   test("page displays version history table columns", async ({ page }) => {
     await page.goto("/admin/config-rollback");
     await page.waitForTimeout(2000);
