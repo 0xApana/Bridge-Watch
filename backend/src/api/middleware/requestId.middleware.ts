@@ -8,7 +8,10 @@
  * - X-Request-ID header for outgoing HTTP calls and webhooks
  */
 
-import { Request, Response, NextFunction } from 'express';
+// Lightweight local types to avoid a hard dependency on express type defs
+type Request = any;
+type Response = any;
+type NextFunction = (err?: any) => void;
 import { AsyncLocalStorage } from 'async_hooks';
 import { v4 as uuidv4 } from 'uuid';
 

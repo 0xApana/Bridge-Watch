@@ -22,7 +22,16 @@ declare module "zod" {
 // Third-party modules with missing types in this workspace
 declare module "zod-to-json-schema";
 declare module "jsonwebtoken";
-declare module "jsonwebt oken";
+declare module "jsonwebtoken";
+declare module "express";
+declare module "@aws-sdk/client-s3";
+declare module "@google-cloud/storage";
+declare module "redis";
+declare module "ioredis";
+declare module "ioredis-mock";
+declare module "node-fetch";
+declare module "pino";
+declare module "pino-pretty";
 
 // Loose declarations for a few internal modules that are imported with
 // .js extensions across the codebase. These are intentionally permissive
@@ -30,3 +39,11 @@ declare module "jsonwebt oken";
 declare module "../database/connection.js" { const anything: any; export = anything; }
 declare module "../database/index.js" { const anything: any; export = anything; }
 declare module "../utils/logger.js" { const anything: any; export = anything; }
+
+// Loose global aliases for legacy enum/type names referenced widely across the
+// codebase during the incremental type migration. These are intentionally
+// permissive and will be narrowed later.
+declare type RotationProposalType = any;
+declare type RotationProposalStatus = any;
+
+declare type RawLog = any;
