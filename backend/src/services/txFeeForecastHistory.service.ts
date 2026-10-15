@@ -98,16 +98,20 @@ export class TxFeeForecastHistoryService {
           knex.raw("MAX(base_fee_stroops) AS max_fee"),
           knex.raw("AVG(base_fee_stroops) AS avg_fee"),
           knex.raw("STDDEV_POP(base_fee_stroops) AS std_dev"),
-        );
+        ) as Array<{
+          min_fee?: string | number | null;
+          max_fee?: string | number | null;
+          avg_fee?: string | number | null;
+          std_dev?: string | number | null;
+        }>;
 
-      const avg = parseFloat(row?.avg_fee ?? "100");
-      const stdDev = parseFloat(row?.std_dev ?? "0");
+      const avg = parseFloat(String(row?.avg_fee ?? "100"));
+      const stdDev = parseFloat(String(row?.std_dev ?? "0"));
       const volatilityScore = avg > 0 ? Math.min(100, (stdDev / avg) * 100) : 0;
-
       const report: FeeVolatilityReport = {
         period,
-        minFee: parseFloat(row?.min_fee ?? "100"),
-        maxFee: parseFloat(row?.max_fee ?? "100"),
+        minFee: parseFloat(String(row?.min_fee ?? "100")),
+        maxFee: parseFloat(String(row?.max_fee ?? "100")),
         avgFee: avg,
         stdDev,
         volatilityScore,

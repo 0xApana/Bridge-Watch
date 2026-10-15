@@ -1,8 +1,10 @@
 import crypto from "crypto";
+import type { Knex } from "knex";
 import { getDatabase } from "../database/connection.js";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
 import { ingestionWatermarkCoordinator } from "./ingestionWatermarkCoordinator.service.js";
+import type { IngestionJobRow, UnconfirmedEventRow } from "../types/ingestion.types.js";
 
 export type IngestionJobType = "alert" | "event" | "metric";
 
@@ -128,7 +130,7 @@ export class IngestionQueueManager {
       .orWhere(function () {
         this.where({ status: "failed" })
           .where("attempts", "<", db.raw("max_attempts"))
-          .where((qb: any) => {
+          .where((qb: Knex.QueryBuilder) => {
             qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
           });
       })
@@ -143,7 +145,7 @@ export class IngestionQueueManager {
     }
   }
 
-  private async handleJob(row: any): Promise<void> {
+  private async handleJob(row: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     const jobId = row.id;
     try {
@@ -179,7 +181,7 @@ export class IngestionQueueManager {
     }
   }
 
-  private async processJobLogic(jobRow: any): Promise<void> {
+  private async processJobLogic(jobRow: IngestionJobRow): Promise<void> {
     return;
   }
 
@@ -406,7 +408,7 @@ export class IngestionQueueManager {
     return next;
   }
 
-  private async moveToDeadLetter(jobRow: any): Promise<void> {
+  private async moveToDeadLetter(jobRow: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     await db("dead_letter_jobs").insert({
       id: jobRow.id,
@@ -422,21 +424,13 @@ export class IngestionQueueManager {
     await db("ingestion_jobs").where({ id: jobRow.id }).delete();
     logger.warn({ jobId: jobRow.id }, "Job moved to dead-letter queue");
   }
-
-  private mapUnconfirmedEvent(row: any): UnconfirmedEvent {
-    return {
-      id: row.id,
-      sourceChain: row.source_chain,
-      eventType: row.event_type,
-      payload: typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload,
-      txHash: row.tx_hash,
-      ledgerSequence: Number(row.ledger_sequence),
-      observedLedger: Number(row.observed_ledger),
-      confirmations: Number(row.confirmations),
-      requiredConfirmations: Number(row.required_confirmations),
-      isConfirmed: row.is_confirmed,
-      isRolledBack: row.is_rolled_back,
-    };
+  private mapUnconfirmedEvent(row: UnconfirmedEventRow): UnconfirmedEvent {
+    // Delegate to the shared pure mapper to keep logic testable and reuseable.
+    // Import dynamically to avoid circular import issues at module load time.
+    // (The mapper is lightweight and synchronous.)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { mapUnconfirmedEventRow } = require("./ingestionQueueManager.mapper.js");
+    return mapUnconfirmedEventRow(row);
   }
 
   private async getCurrentLedger(sourceChain: string): Promise<number | null> {

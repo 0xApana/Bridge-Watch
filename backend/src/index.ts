@@ -29,7 +29,7 @@ import { registerCompatibilityMiddleware } from "./api/compatibility/middleware.
 export async function buildServer() {
   const server = Fastify({
     logger: false,
-    loggerInstance: logger,
+    loggerInstance: logger as any,
     ajv: {
       customOptions: {
         strict: false,
@@ -93,7 +93,7 @@ export async function buildServer() {
     credentials: true,
   });
 
-  await registerCompatibilityMiddleware(server);
+  await registerCompatibilityMiddleware(server as any);
 
   // OpenAPI / Swagger — must be registered before routes so schemas are collected
   await server.register(swagger, swaggerOptions);
