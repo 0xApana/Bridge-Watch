@@ -3,6 +3,7 @@ import { logger } from "../utils/logger.js";
 import { CacheService, CacheTTL } from "../utils/cache.js";
 
 const knex = getDatabase();
+const QUERY_TIMEOUT_MS = 30_000;
 
 export type TimeInterval = "1h" | "1d" | "1w" | "1M";
 export type AggregationPeriod = "hourly" | "daily" | "weekly" | "monthly";
@@ -89,13 +90,12 @@ export class AnalyticsService {
         logger.info("Computing protocol-wide statistics");
 
         const [tvlResult, volumeResult, bridgeResult, assetResult, txResult, healthResult] = await Promise.all([
-          // Total Value Locked
           knex("bridges")
             .sum("total_value_locked as total")
             .where("is_active", true)
-            .first(),
-          
-          // Volume aggregations
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
+
           knex("bridge_volume_stats")
             .select(
               knex.raw("SUM(inflow_amount + outflow_amount) as volume_24h"),
@@ -103,31 +103,32 @@ export class AnalyticsService {
               knex.raw("SUM(CASE WHEN stat_date >= CURRENT_DATE - INTERVAL '30 days' THEN inflow_amount + outflow_amount ELSE 0 END) as volume_30d")
             )
             .where("stat_date", ">=", knex.raw("CURRENT_DATE - INTERVAL '30 days'"))
-            .first(),
-          
-          // Active bridges
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
+
           knex("bridges")
             .count("* as count")
             .where("is_active", true)
-            .first(),
-          
-          // Active assets
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
+
           knex("assets")
             .count("* as count")
             .where("is_active", true)
-            .first(),
-          
-          // Transaction count (24h)
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
+
           knex("bridge_volume_stats")
             .sum("tx_count as total")
             .where("stat_date", ">=", knex.raw("CURRENT_DATE - INTERVAL '1 day'"))
-            .first(),
-          
-          // Average health score
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
+
           knex("health_scores")
             .avg("overall_score as avg")
             .where("time", ">=", knex.raw("NOW() - INTERVAL '1 hour'"))
-            .first(),
+            .first()
+            .timeout(QUERY_TIMEOUT_MS),
         ] as any);
 
         const stats: ProtocolStats = {
@@ -160,7 +161,8 @@ export class AnalyticsService {
 
         const bridges = await knex("bridges")
           .select("*")
-          .where("is_active", true);
+          .where("is_active", true)
+          .timeout(QUERY_TIMEOUT_MS);
 
         const totalTVL = bridges.reduce((sum: number, b: any) => sum + parseFloat(b.total_value_locked), 0);
 
@@ -177,15 +179,17 @@ export class AnalyticsService {
                 )
                 .where("bridge_name", bridge.name)
                 .where("stat_date", ">=", knex.raw("CURRENT_DATE - INTERVAL '30 days'"))
-                .first(),
-              
+                .first()
+                .timeout(QUERY_TIMEOUT_MS),
+
               knex("bridge_volume_stats")
                 .sum("inflow_amount as total")
                 .sum("outflow_amount as total_out")
                 .where("bridge_name", bridge.name)
                 .where("stat_date", ">=", knex.raw("CURRENT_DATE - INTERVAL '2 days'"))
                 .where("stat_date", "<", knex.raw("CURRENT_DATE - INTERVAL '1 day'"))
-                .first(),
+                .first()
+                .timeout(QUERY_TIMEOUT_MS),
             ] as any);
 
             const currentVolume = parseFloat(volumeStats?.volume_24h || "0");
@@ -740,6 +744,92 @@ export class AnalyticsService {
         return formatRows(results);
       },
       { bypassCache, tags: ["analytics", "historical"], ttl: CacheTTL.ANALYTICS }
+    );
+  }
+
+  /**
+   * Get hourly volume rollup for a bridge using TimescaleDB continuous aggregate
+   */
+  async getBridgeHourlyVolumeRollup(
+    bridgeId: string,
+    startDate: Date,
+    endDate: Date = new Date(),
+    bypassCache: boolean = false
+  ): Promise<Array<{
+    bucket: string;
+    bridgeId: string;
+    totalVolume: string;
+    transactionCount: number;
+    avgAmount: string;
+    minAmount: string;
+    maxAmount: string;
+  }>> {
+    const cacheKey = CacheService.generateKey(
+      "analytics",
+      `bridge_rollup:${bridgeId}:${startDate.toISOString()}:${endDate.toISOString()}`
+    );
+
+    return CacheService.getOrSet(
+      cacheKey,
+      async () => {
+        try {
+          const results = await knex("bridge_hourly_volume_rollup")
+            .select(
+              "bucket",
+              "bridge_id as bridgeId",
+              "total_volume as totalVolume",
+              "transaction_count as transactionCount",
+              "avg_amount as avgAmount",
+              "min_amount as minAmount",
+              "max_amount as maxAmount"
+            )
+            .where("bridge_id", bridgeId)
+            .where("bucket", ">=", startDate)
+            .where("bucket", "<=", endDate)
+            .orderBy("bucket", "asc");
+
+          if (results && results.length > 0) {
+            return results.map((row: any) => ({
+              bucket: row.bucket,
+              bridgeId: row.bridgeId,
+              totalVolume: row.totalVolume?.toString() || "0",
+              transactionCount: Number(row.transactionCount || 0),
+              avgAmount: row.avgAmount?.toString() || "0",
+              minAmount: row.minAmount?.toString() || "0",
+              maxAmount: row.maxAmount?.toString() || "0",
+            }));
+          }
+        } catch {
+          // Fallback to raw bridge_transactions aggregation if continuous aggregate is not present
+        }
+
+        const rawResults = await knex("bridge_transactions")
+          .select(
+            knex.raw("DATE_TRUNC('hour', created_at) as bucket"),
+            "bridge_name as bridgeId",
+            knex.raw("SUM(amount) as total_volume"),
+            knex.raw("COUNT(*) as transaction_count"),
+            knex.raw("AVG(amount) as avg_amount"),
+            knex.raw("MIN(amount) as min_amount"),
+            knex.raw("MAX(amount) as max_amount")
+          )
+          .where("bridge_name", bridgeId)
+          .where("created_at", ">=", startDate)
+          .where("created_at", "<=", endDate)
+          .groupBy("bucket", "bridge_name")
+          .orderBy("bucket", "asc");
+
+        return rawResults.map((row: any) => ({
+          bucket: row.bucket,
+          bridgeId: row.bridgeId,
+          totalVolume: row.total_volume?.toString() || "0",
+          transactionCount: Number(row.transaction_count || 0),
+          avgAmount: row.avg_amount?.toString() || "0",
+          minAmount: row.min_amount?.toString() || "0",
+          maxAmount: row.max_amount?.toString() || "0",
+        }));
+      },
+      { bypassCache, tags: ["analytics", "bridge_rollup"], ttl: CacheTTL.ANALYTICS }
     );
   }
 }

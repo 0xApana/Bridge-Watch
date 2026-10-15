@@ -38,7 +38,7 @@ export async function ledgerCloseDelayRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (request, reply) => {
       const record = request.body;
 
       const ledgerEvent = await ledgerCloseDelayService.recordClosureEvent({
@@ -83,7 +83,7 @@ export async function ledgerCloseDelayRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (request, reply) => {
       const { alertId } = request.params;
       const { status, notes } = request.body;
 

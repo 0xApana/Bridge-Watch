@@ -214,6 +214,20 @@ const envSchema = z.object({
   HEALTH_CHECK_DISK_THRESHOLD: z.coerce.number().default(80),
   HEALTH_CHECK_EXTERNAL_APIS: z.string().default("true"),
 
+  // External Source Response Archive (#1162)
+  // Captures raw upstream responses (price feeds, RPC providers, attestation
+  // APIs) so a disputed data point can be traced back to exactly what the
+  // source returned at collection time.
+  EXTERNAL_SOURCE_ARCHIVE_ENABLED: z.coerce.boolean().default(true),
+  // Default retention window before an archived response is eligible for
+  // pruning. Individual sources may override this (see the service).
+  EXTERNAL_SOURCE_ARCHIVE_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
+  // Hard cap on the stored body size, in bytes. Larger bodies are truncated and
+  // flagged so the archive cannot be used to exhaust disk.
+  EXTERNAL_SOURCE_ARCHIVE_MAX_BODY_BYTES: z.coerce.number().int().positive().default(256 * 1024),
+  // Rows deleted per pruning batch, to keep the retention job off long locks.
+  EXTERNAL_SOURCE_ARCHIVE_PRUNE_BATCH: z.coerce.number().int().positive().default(500),
+
   // CORS Configuration
   CORS_ALLOWED_ORIGINS: z
     .string()
@@ -264,6 +278,23 @@ const envSchema = z.object({
   INGESTION_REORG_BUFFER_DEPTH: z.coerce.number().default(100),
   INGESTION_REORG_POLL_INTERVAL_MS: z.coerce.number().default(30_000),
   INGESTION_UNCONFIRMED_EVENT_TTL_MINUTES: z.coerce.number().default(60),
+
+  // Privacy / redaction pipeline. Classifies sensitive fields centrally and
+  // redacts them at every configured sink before persistence or transmission.
+  // When disabled the pipeline passes payloads through untouched.
+  REDACTION_ENABLED: z.coerce.boolean().default(true),
+  // Hex (or ASCII) salt used to derive deterministic pseudonyms. Keep this
+  // secret: it is the only thing that maps a pseudonym back to a candidate.
+  // It is intentionally never stored alongside the redacted data.
+  REDACTION_PSEUDONYM_SALT: z.string().default("bridge-watch-pseudonym-salt-dev"),
+  // Namespace applied to pseudonyms so identical inputs under different
+  // payload shapes stay distinct and rotation is scoped.
+  REDACTION_PSEUDONYM_NAMESPACE: z.string().default("operational"),
+  // Block (throw) instead of silently redacting when a secret is detected in
+  // a sink that refuses unsafe payloads. Applies per-sink policy by default.
+  REDACTION_BLOCK_ON_SECRET: z.coerce.boolean().default(false),
+  // Persist redaction decisions to the audit table for post-hoc review.
+  REDACTION_DECISION_LOG_ENABLED: z.coerce.boolean().default(true),
 });
 
 export type EnvConfig = z.infer<typeof envSchema>;

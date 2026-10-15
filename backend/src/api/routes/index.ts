@@ -61,6 +61,9 @@ export async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Anomaly detection: detection and tuning
   await registerAnomalyRoutes(server);
 
+  // DEX liquidity: pool discovery, quality ranking, impact presets, route quotes
+  await registerLiquidityRoutes(server);
+
   // Automation: rules, evaluator, playbooks, cleanup
   await registerAutomationRoutes(server);
 
@@ -81,4 +84,24 @@ export async function registerRoutes(server: FastifyInstance): Promise<void> {
 
   // Operational routes: query baseline, rollback readiness, canary metrics, promotion gates, risk clustering
   await registerOperationalRoutes(server);
+
+  server.register(sorobanEventsRoutes, { prefix: "/api/v1/soroban-events" });
+  // #1198 — Soroban contract instance discovery
+  server.register(contractInstanceDiscoveryRoutes, { prefix: "/api/v1/soroban-contracts" });
+  server.register(backfillRoutes, { prefix: "/api/v1/backfill" });
+
+  // #1019 — Signed evidence bundles & append-only transparency log
+  server.register(evidenceBundleRoutes, { prefix: "/api/v1/evidence" });
+
+  // #1184 — Queue Priority Fairness
+  server.register(queueFairnessRoutes, { prefix: "/api/v1/admin/queue-fairness" });
+
+  // #1199 — Contract Event Subscription Registry
+  server.register(contractEventSubscriptionRegistryRoutes, { prefix: "/api/v1/contract-subscriptions" });
+
+  // #1190 — Secret Provider Health Checks
+  server.register(secretProviderHealthRoutes, { prefix: "/api/v1/secret-providers" });
+
+  // #1191 — Container Resource Utilization Dashboard
+  server.register(containerResourceMetricsRoutes, { prefix: "/api/v1/container-metrics" });
 }

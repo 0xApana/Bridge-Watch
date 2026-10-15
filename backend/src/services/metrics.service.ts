@@ -43,6 +43,12 @@ class MetricsService {
   public liquidityTVL: Gauge;
   public alertsTriggered: Counter;
   public circuitBreakerTrips: Counter;
+  public workerRestartsTotal: Counter;
+  // #1243 — EVM reserve attestation telemetry
+  public bridgeReserveRatio: Gauge;
+  public bridgeReserveMismatchDetected: Gauge;
+  // #1245 — Bridge health telemetry
+  public horizonCursorLastSyncTimestamp: Gauge;
 
   // Cache Metrics
   public cacheHits: Counter;
@@ -104,6 +110,10 @@ class MetricsService {
     this.liquidityTVL = undefined as any;
     this.alertsTriggered = undefined as any;
     this.circuitBreakerTrips = undefined as any;
+    this.workerRestartsTotal = undefined as any;
+    this.bridgeReserveRatio = undefined as any;
+    this.bridgeReserveMismatchDetected = undefined as any;
+    this.horizonCursorLastSyncTimestamp = undefined as any;
     this.cacheHits = undefined as any;
     this.cacheMisses = undefined as any;
     this.cacheSize = undefined as any;
@@ -322,6 +332,36 @@ class MetricsService {
       name: "circuit_breaker_trips_total",
       help: "Total number of circuit breaker trips",
       labelNames: ["bridge_id", "reason"],
+      registers: [this.registry],
+    });
+
+    this.workerRestartsTotal = new Counter({
+      name: "worker_restarts_total",
+      help: "Total number of worker restarts by worker and reason",
+      labelNames: ["worker", "reason"],
+      registers: [this.registry],
+    });
+
+    // #1243 — EVM reserve attestation telemetry
+    this.bridgeReserveRatio = new Gauge({
+      name: "bridge_reserve_ratio",
+      help: "On-chain EVM reserve balances divided by committed reserves",
+      labelNames: ["bridge_id", "asset_code", "chain"],
+      registers: [this.registry],
+    });
+
+    this.bridgeReserveMismatchDetected = new Gauge({
+      name: "bridge_reserve_mismatch_detected",
+      help: "1 when the reserve ratio drops below the attestation threshold, 0 otherwise",
+      labelNames: ["bridge_id", "asset_code"],
+      registers: [this.registry],
+    });
+
+    // #1245 — Bridge health telemetry
+    this.horizonCursorLastSyncTimestamp = new Gauge({
+      name: "horizon_cursor_last_sync_timestamp",
+      help: "Unix timestamp of the last successful Horizon cursor sync",
+      labelNames: ["cursor_key"],
       registers: [this.registry],
     });
 

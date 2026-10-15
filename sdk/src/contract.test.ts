@@ -409,3 +409,175 @@ describe("TypedBridgeWatchContractSdk setHealthWeights", () => {
     expect(arg.method).toBe("set_health_weights");
   });
 });
+
+// ── ZK/MMR verification helpers (issue #1244) ────────────────────────────────
+
+describe("TypedBridgeWatchContractSdk zk/mmr verification helpers", () => {
+  let sdk: TypedBridgeWatchContractSdk;
+  let queryMethodSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    sdk = new TypedBridgeWatchContractSdk(testConfig);
+    queryMethodSpy = vi
+      .spyOn(sdk, "queryMethod" as keyof typeof sdk)
+      .mockResolvedValue({} as never);
+  });
+
+  const zkParams = {
+    operator: TEST_CALLER,
+    operatorSecret: "SCCOPERAaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    proof: {
+      scheme: "Groth16",
+      curve: "Bn254",
+      pi_a: "AAAA",
+      pi_b: "AAAA",
+      pi_c: "AAAA",
+      commitment_hash: "ab".repeat(32),
+    },
+    publicInputs: {
+      total_reserves: 1_000_000n,
+      on_chain_supply: 900_000n,
+      min_reserve_ratio_bps: 10_000,
+      timestamp: 1_700_000_000,
+      bridge_id: "bridge-1",
+      asset_code: "USDC",
+    },
+  };
+
+  const mmrProof = {
+    leaf_hash: "ab".repeat(32),
+    leaf_index: 7,
+    siblings: ["cd".repeat(32), "ef".repeat(32)],
+    peaks_snapshot: ["12".repeat(32), "34".repeat(32)],
+    local_peak_pos: 0,
+  };
+
+  it("verifyZkProof invokes verify_zk_reserve_proof with structured args", async () => {
+    const invokeSpy = vi
+      .spyOn(sdk, "invokeAndSend" as keyof typeof sdk)
+      .mockResolvedValue({ status: "SUCCESS" } as never);
+
+    const result = await sdk.verifyZkProof(zkParams);
+
+    expect(invokeSpy).toHaveBeenCalled();
+    const call = (invokeSpy as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.method).toBe("verify_zk_reserve_proof");
+    expect(call.args).toHaveLength(3);
+    expect(result.valid).toBe(true);
+  });
+
+  it("buildVerifyZkProofTransaction builds the invoke transaction", async () => {
+    const buildSpy = vi
+      .spyOn(sdk, "buildInvokeTransaction" as keyof typeof sdk)
+      .mockResolvedValue({} as never);
+
+    await sdk.buildVerifyZkProofTransaction({
+      operator: zkParams.operator,
+      proof: zkParams.proof,
+      publicInputs: zkParams.publicInputs,
+    });
+
+    const call = (buildSpy as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.method).toBe("verify_zk_reserve_proof");
+    expect(call.sourcePublicKey).toBe(zkParams.operator);
+  });
+
+  it("verifyMmrProof without expected root uses verify_against_current", async () => {
+    queryMethodSpy.mockResolvedValue({
+      result: { retval: StellarSdk.xdr.ScVal.scvBool(true) },
+    } as never);
+
+    const valid = await sdk.verifyMmrProof(mmrProof);
+
+    const call = (queryMethodSpy as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.method).toBe("verify_against_current");
+    expect(call.args).toHaveLength(1);
+    expect(valid).toBe(true);
+  });
+
+  it("verifyMmrProof with expected root uses verify_mmr_proof", async () => {
+    queryMethodSpy.mockResolvedValue({
+      result: { retval: StellarSdk.xdr.ScVal.scvBool(false) },
+    } as never);
+
+    const valid = await sdk.verifyMmrProof(mmrProof, "ff".repeat(32));
+
+    const call = (queryMethodSpy as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(call.method).toBe("verify_mmr_proof");
+    expect(call.args).toHaveLength(2);
+    expect(valid).toBe(false);
+  });
+
+  it("verifyMmrProof returns false on an empty simulation result", async () => {
+    queryMethodSpy.mockResolvedValue({} as never);
+    expect(await sdk.verifyMmrProof(mmrProof)).toBe(false);
+  });
+
+  describe("getBatchAssetHealth", () => {
+    const sym = (v: string) => StellarSdk.xdr.ScVal.scvSymbol(v);
+    const str = (v: string) => StellarSdk.xdr.ScVal.scvString(v);
+    const entry = (k: string, v: StellarSdk.xdr.ScVal) =>
+      new StellarSdk.xdr.ScMapEntry({ key: sym(k), val: v });
+    const usdc = {
+      asset_code: "USDC",
+      name: "USD Coin",
+      symbol: "USDC",
+      issuer: "GISSUER",
+      status: "active",
+    };
+    const response = StellarSdk.xdr.ScVal.scvMap([
+      entry("error_count", StellarSdk.xdr.ScVal.scvU32(1)),
+      entry(
+        "processed_at",
+        StellarSdk.xdr.ScVal.scvU64(StellarSdk.xdr.Uint64.fromString("1"))
+      ),
+      entry(
+        "results",
+        StellarSdk.xdr.ScVal.scvVec([
+          StellarSdk.xdr.ScVal.scvVec([sym("Success"), str(JSON.stringify(usdc))]),
+          StellarSdk.xdr.ScVal.scvVec([sym("Failure"), str("Asset not found")]),
+        ])
+      ),
+      entry("success_count", StellarSdk.xdr.ScVal.scvU32(1)),
+    ]);
+
+    it("makes one batch_query_assets simulation and parses results in order", async () => {
+      queryMethodSpy.mockResolvedValue({
+        result: { retval: response },
+        transactionData: {},
+        minResourceFee: "0",
+        cost: {},
+        events: [],
+        latestLedger: 1,
+        _parsed: true,
+      } as never);
+
+      const results = await sdk.getBatchAssetHealth(["USDC", "NOPE"], "CBATCH");
+
+      expect(queryMethodSpy).toHaveBeenCalledTimes(1);
+      expect(queryMethodSpy).toHaveBeenCalledWith({
+        method: "batch_query_assets",
+        args: [expect.any(Object)],
+        contractId: "CBATCH",
+      });
+      expect(results).toEqual([
+        { asset_code: "USDC", ok: true, data: usdc },
+        { asset_code: "NOPE", ok: false, error: "Asset not found" },
+      ]);
+    });
+
+    it("rejects empty and oversized batches without calling RPC", async () => {
+      await expect(sdk.getBatchAssetHealth([])).rejects.toThrow(/1-50/);
+      await expect(
+        sdk.getBatchAssetHealth(Array.from({ length: 51 }, (_, i) => `A${i}`))
+      ).rejects.toThrow(/got 51/);
+      expect(queryMethodSpy).not.toHaveBeenCalled();
+    });
+
+    it("throws when the simulation returns no result", async () => {
+      await expect(sdk.getBatchAssetHealth(["USDC"])).rejects.toThrow(
+        /simulation failed/
+      );
+    });
+  });
+});

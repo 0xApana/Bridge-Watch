@@ -279,7 +279,7 @@ export async function horizonCursorAuditRoutes(server: FastifyInstance) {
         },
       },
     },
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    async (request: FastifyRequest<{ Querystring: { limit?: string } }>, reply: FastifyReply) => {
       const { limit } = request.query as Record<string, string>;
 
       const discrepancies = await horizonCursorAuditService.getDiscrepancies(parseInt(limit, 10) || 50);

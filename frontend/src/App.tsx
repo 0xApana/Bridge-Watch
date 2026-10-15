@@ -67,6 +67,55 @@ const OperatorAvailabilityCalendar = lazy(() => import("./pages/admin/OperatorAv
 const IncidentOwnershipTransfer = lazy(() => import("./pages/admin/IncidentOwnershipTransfer"));
 // #1143 — Alert Escalation Policy Preview
 const AlertEscalationPolicyPreview = lazy(() => import("./pages/admin/AlertEscalationPolicyPreview"));
+// #1162 — External Source Response Archive
+const ExternalSourceResponseArchive = lazy(() => import("./pages/admin/ExternalSourceResponseArchive"));
+// #1171 — Dataset Column Lineage
+const DatasetColumnLineage = lazy(() => import("./pages/admin/DatasetColumnLineage"));
+// #1170 — Import Validation Preview
+const ImportValidationPreview = lazy(() => import("./pages/admin/ImportValidationPreview"));
+// #1172 — API Key Scope Templates
+const ApiKeyScopeTemplates = lazy(() => import("./pages/admin/ApiKeyScopeTemplates"));
+// #1168 — Failed Parse Quarantine Queue
+const ParseQuarantineQueue = lazy(() => import("./pages/admin/ParseQuarantineQueue"));
+// #1177 — Security Event Correlation View
+const SecurityEventCorrelation = lazy(() => import("./pages/admin/SecurityEventCorrelation"));
+// #1178 — Webhook IP Allowlist Management
+const WebhookIpAllowlist = lazy(() => import("./pages/admin/WebhookIpAllowlist"));
+// #1179 — Signed Request Verification Middleware
+const SignedRequestVerification = lazy(() => import("./pages/admin/SignedRequestVerification"));
+// #1180 — Sensitive Field Access Reports
+const SensitiveFieldAccessReport = lazy(() => import("./pages/admin/SensitiveFieldAccessReport"));
+const DexPoolDiscovery = lazy(() => import("./pages/liquidity/DexPoolDiscovery"));
+const PoolQualityRanking = lazy(() => import("./pages/liquidity/PoolQualityRanking"));
+const MarketImpactPresets = lazy(() => import("./pages/liquidity/MarketImpactPresets"));
+const RouteQuotes = lazy(() => import("./pages/liquidity/RouteQuotes"));
+// #1040 — Asset Lifecycle State Timeline
+const AssetLifecycleTimeline = lazy(() => import("./pages/AssetLifecycleTimeline"));
+// #1176 — Permission Change Notifications
+const PermissionChangeNotifications = lazy(() => import("./pages/PermissionChangeNotifications"));
+// #1173 — Session Device Management
+const SessionDeviceManagement = lazy(() => import("./pages/SessionDeviceManagement"));
+// #1175 — Admin Impersonation Safeguards
+const AdminImpersonationSafeguards = lazy(() => import("./pages/admin/AdminImpersonationSafeguards"));
+// #1184 — Queue Priority Fairness
+const QueueFairness = lazy(() => import("./pages/admin/QueueFairness"));
+// #1207 — OpenAPI Client Generation Workflow
+const OpenApiClientGen = lazy(() => import("./pages/admin/OpenApiClientGen"));
+// #1241 — Integrate orphaned pages
+const Status = lazy(() => import("./pages/Status"));
+const OperationsConsole = lazy(() => import("./pages/OperationsConsole"));
+const Dependencies = lazy(() => import("./pages/Dependencies"));
+const AllowlistManagement = lazy(() => import("./pages/admin/AllowlistManagement"));
+const ExportQuotas = lazy(() => import("./pages/admin/ExportQuotas"));
+const RpcCapabilities = lazy(() => import("./pages/admin/RpcCapabilities"));
+const TokenDecimalAlerts = lazy(() => import("./pages/admin/TokenDecimalAlerts"));
+const AuditTrailPage = lazy(() => import("./pages/admin/audit/AuditTrailPage"));
+// #1199 — Contract Event Subscription Registry
+const ContractEventSubscriptions = lazy(() => import("./pages/ContractEventSubscriptions"));
+// #1190 — Secret Provider Health Checks
+const SecretProviderHealth = lazy(() => import("./pages/admin/SecretProviderHealth"));
+// #1191 — Container Resource Utilization Dashboard
+const ContainerResourceUtilization = lazy(() => import("./pages/ContainerResourceUtilization"));
 
 function NotificationInitializer() {
   useNotifications();
@@ -113,8 +162,6 @@ function App() {
                   <ComponentErrorBoundary
                     severity="medium"
                     context="relationship-explorer"
-                    title="Relationship Explorer Error"
-                    message="Unable to load the asset relationship graph. Please check your data and try again."
                   >
                     <RelationshipExplorer />
                   </ComponentErrorBoundary>
@@ -155,6 +202,59 @@ function App() {
               <Route path="/admin/incident-ownership-transfer" element={<IncidentOwnershipTransfer />} />
               {/* #1143 — Alert Escalation Policy Preview */}
               <Route path="/admin/alert-escalation-preview" element={<AlertEscalationPolicyPreview />} />
+              {/* #1162 — External Source Response Archive */}
+              <Route path="/admin/external-source-archive" element={<ExternalSourceResponseArchive />} />
+              {/* #1171 — Dataset Column Lineage */}
+              <Route path="/admin/dataset-lineage" element={<DatasetColumnLineage />} />
+              {/* #1170 — Import Validation Preview */}
+              <Route path="/admin/import-validation-preview" element={<ImportValidationPreview />} />
+              {/* #1172 — API Key Scope Templates */}
+              <Route path="/admin/api-key-templates" element={<ApiKeyScopeTemplates />} />
+              {/* #1168 — Failed Parse Quarantine Queue */}
+              <Route path="/admin/quarantine" element={<ParseQuarantineQueue />} />
+              {/* #1177 — Security Event Correlation View */}
+              <Route path="/admin/security-correlations" element={<SecurityEventCorrelation />} />
+              {/* #1178 — Webhook IP Allowlist Management */}
+              <Route path="/admin/webhook-ip-allowlist" element={<WebhookIpAllowlist />} />
+              {/* #1179 — Signed Request Verification Middleware */}
+              <Route path="/admin/signed-requests" element={<SignedRequestVerification />} />
+              {/* #1180 — Sensitive Field Access Reports */}
+              <Route path="/admin/sensitive-field-reports" element={<SensitiveFieldAccessReport />} />
+              {/* #1157 — DEX Pool Discovery Refresh */}
+              <Route path="/liquidity/pool-discovery" element={<DexPoolDiscovery />} />
+              {/* #1158 — Liquidity Pool Quality Ranking */}
+              <Route path="/liquidity/pool-quality" element={<PoolQualityRanking />} />
+              {/* #1159 — Market Impact Scenario Presets */}
+              <Route path="/liquidity/market-impact-presets" element={<MarketImpactPresets />} />
+              {/* #1160 — Route Quote Expiration Handling */}
+              <Route path="/liquidity/route-quotes" element={<RouteQuotes />} />
+              {/* #1040 — Asset Lifecycle State Timeline */}
+              <Route path="/assets/lifecycle-timeline" element={<AssetLifecycleTimeline />} />
+              {/* #1176 — Permission Change Notifications */}
+              <Route path="/notifications/permission-changes" element={<PermissionChangeNotifications />} />
+              {/* #1173 — Session Device Management */}
+              <Route path="/user/devices" element={<SessionDeviceManagement />} />
+              {/* #1175 — Admin Impersonation Safeguards */}
+              <Route path="/admin/impersonation-safeguards" element={<AdminImpersonationSafeguards />} />
+              {/* #1184 — Queue Priority Fairness */}
+              <Route path="/admin/queue-fairness" element={<QueueFairness />} />
+              {/* #1207 — OpenAPI Client Generation Workflow */}
+              <Route path="/admin/openapi-client-gen" element={<OpenApiClientGen />} />
+              {/* #1241 — Integrate orphaned pages */}
+              <Route path="/status" element={<Status />} />
+              <Route path="/operations-console" element={<OperationsConsole />} />
+              <Route path="/dependencies" element={<Dependencies />} />
+              <Route path="/admin/allowlist-management" element={<AllowlistManagement />} />
+              <Route path="/admin/export-quotas" element={<ExportQuotas />} />
+              <Route path="/admin/rpc-capabilities" element={<RpcCapabilities />} />
+              <Route path="/admin/token-decimal-alerts" element={<TokenDecimalAlerts />} />
+              <Route path="/admin/audit-trail" element={<AuditTrailPage />} />
+              {/* #1199 — Contract Event Subscription Registry */}
+              <Route path="/contract-subscriptions" element={<ContractEventSubscriptions />} />
+              {/* #1190 — Secret Provider Health Checks */}
+              <Route path="/admin/secret-provider-health" element={<SecretProviderHealth />} />
+              {/* #1191 — Container Resource Utilization Dashboard */}
+              <Route path="/container-resources" element={<ContainerResourceUtilization />} />
             </Route>
           </Routes>
         </Suspense>

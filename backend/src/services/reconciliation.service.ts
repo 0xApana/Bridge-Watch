@@ -2,6 +2,8 @@ import { getDatabase } from "../database/connection.js";
 import { normalizeJsonObject } from "../utils/json.js";
 import type { ReconciliationStatus } from "../database/types.js";
 
+const QUERY_TIMEOUT_MS = 30_000;
+
 export type ReconciliationTriageStatus =
   | "open"
   | "investigating"
@@ -256,7 +258,8 @@ export class ReconciliationService {
     const limit = Math.min(Math.max(params.limit ?? 50, 1), 500);
     const q = this.db("reconciliation_runs")
       .orderBy("started_at", "desc")
-      .limit(limit);
+      .limit(limit)
+      .timeout(QUERY_TIMEOUT_MS);
 
     if (params.assetCode) q.where({ asset_code: params.assetCode });
     return q;
@@ -266,7 +269,8 @@ export class ReconciliationService {
     return this.db("reconciliation_runs")
       .where({ asset_code: assetCode })
       .orderBy("started_at", "desc")
-      .first();
+      .first()
+      .timeout(QUERY_TIMEOUT_MS);
   }
 
   async getDriftSummaries(filters: DriftSummaryFilters = {}) {

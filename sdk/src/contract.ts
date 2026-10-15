@@ -69,6 +69,23 @@ export interface HealthSource {
   registered_at: number;
 }
 
+/** Mirrors batch_query::AssetData, serialized as JSON by the batch query contract. */
+export interface BatchAssetState {
+  asset_code: string;
+  name: string;
+  symbol: string;
+  issuer: string;
+  status: string;
+}
+
+/** One entry per requested asset code, in request order. */
+export type BatchAssetResult =
+  | { asset_code: string; ok: true; data: BatchAssetState }
+  | { asset_code: string; ok: false; error: string };
+
+/** Mirrors batch_query::MAX_BATCH_SIZE. */
+export const MAX_BATCH_QUERY_SIZE = 50;
+
 export type StatusTier = "ok" | "low" | "medium" | "high";
 
 export interface ContractStatusRollup {
@@ -169,6 +186,52 @@ export interface SubmitPriceParams {
   source: string;
 }
 
+/** Parameters mirroring the contract's `ZkPublicInputs` (issue #1244). */
+export interface ZkPublicInputsParams {
+  total_reserves: bigint | number;
+  on_chain_supply: bigint | number;
+  min_reserve_ratio_bps: number;
+  timestamp: number;
+  bridge_id: string;
+  asset_code: string;
+}
+
+/** Parameters mirroring the contract's `ZkProof` (issue #1244). */
+export interface ZkProofParams {
+  /** Proof scheme expected by the registered verification key ("Groth16" | "Plonk"). */
+  scheme: string;
+  /** Proof curve expected by the registered verification key ("Bn254" | "Bls12_381"). */
+  curve: string;
+  /** Base-64 XDR proof point components. */
+  pi_a: string;
+  pi_b: string;
+  pi_c: string;
+  /** Hex-encoded 32-byte commitment hash. */
+  commitment_hash: string;
+}
+
+/** Parameters mirroring the contract's `MmrProof` (issue #1244). */
+export interface MmrProofParams {
+  /** Hex-encoded 32-byte hash of the leaf being proven. */
+  leaf_hash: string;
+  /** 0-indexed position of the leaf in the overall sequence. */
+  leaf_index: number;
+  /** Hex-encoded 32-byte sibling hashes from leaf to local subtree peak. */
+  siblings: string[];
+  /** Snapshot of all peaks with the proven leaf's local root zeroed. */
+  peaks_snapshot: string[];
+  /** Index into `peaks_snapshot` of the local subtree peak. */
+  local_peak_pos: number;
+}
+
+/** Result of an on-chain ZK reserve-proof verification. */
+export interface ZkProofVerificationResult {
+  /** Whether the proof verified and the attestation was recorded. */
+  valid: boolean;
+  /** Hex-encoded attestation id (sha256 of the attestation payload). */
+  attestationId?: string;
+}
+
 // ============================================================
 // ScVal creation helpers
 // ============================================================
@@ -206,6 +269,22 @@ function scvBool(v: boolean): StellarSdk.xdr.ScVal {
 
 function scvAddress(v: string): StellarSdk.xdr.ScVal {
   return StellarSdk.Address.fromString(v).toScVal();
+}
+
+/** Base-64 XDR bytes → ScVal bytes (contract `Bytes` fields). */
+function scvBytes(base64: string): StellarSdk.xdr.ScVal {
+  return StellarSdk.xdr.ScVal.scvBytes(Buffer.from(base64, "base64"));
+}
+
+/** Hex-encoded 32-byte hash → ScVal bytes (contract `BytesN<32>` fields). */
+function scvBytesN32(hex: string): StellarSdk.xdr.ScVal {
+  const clean = hex.replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(clean)) {
+    throw new BridgeWatchQueryError(
+      `Expected a 32-byte hex string for BytesN<32>, got: ${hex}`
+    );
+  }
+  return StellarSdk.xdr.ScVal.scvBytes(Buffer.from(clean, "hex"));
 }
 
 function scvMap(
@@ -257,6 +336,29 @@ function parseScvI128(val: StellarSdk.xdr.ScVal): bigint {
   const lo = BigInt(parts.lo().toString());
   const hi = BigInt(parts.hi().toString());
   return (hi << BigInt(64)) | lo;
+}
+
+function parseScvSymbol(val: StellarSdk.xdr.ScVal): string {
+  const v = val.sym();
+  if (v == null) return "";
+  return typeof v === "string" ? v : Buffer.from(v).toString("utf-8");
+}
+
+function parseScvAddress(val: StellarSdk.xdr.ScVal): string {
+  return StellarSdk.Address.fromScVal(val).toString();
+}
+
+/**
+ * Normalizes one topic/value entry from a raw Soroban event into an
+ * `xdr.ScVal`. `getEvents` (and the WebSocket relay in `client.ts`) can
+ * deliver either the base64 XDR string form or an already-parsed `ScVal`
+ * depending on the RPC client/transport in front of it — accepting both
+ * here means the event parsers below don't have to care which one arrived.
+ */
+function toScVal(input: string | StellarSdk.xdr.ScVal): StellarSdk.xdr.ScVal {
+  return typeof input === "string"
+    ? StellarSdk.xdr.ScVal.fromXDR(input, "base64")
+    : input;
 }
 
 function getScvMap(
@@ -443,6 +545,21 @@ function parseConfigEntry(val: StellarSdk.xdr.ScVal): ConfigEntry {
   };
 }
 
+function parseBatchAssetResults(
+  assetCodes: string[],
+  val: StellarSdk.xdr.ScVal
+): BatchAssetResult[] {
+  // QueryResult enum variants decode to ["Success" | "Failure", string].
+  const { results } = StellarSdk.scValToNative(val) as {
+    results: [string, string][];
+  };
+  return results.map(([tag, payload], i) =>
+    tag === "Success"
+      ? { asset_code: assetCodes[i], ok: true, data: JSON.parse(payload) }
+      : { asset_code: assetCodes[i], ok: false, error: payload }
+  );
+}
+
 function parseVecOfStrings(val: StellarSdk.xdr.ScVal): string[] {
   const items = val.vec() ?? [];
   return items.map(parseScvString);
@@ -457,10 +574,10 @@ function extractResultScVal(
   simulation: StellarSdk.rpc.Api.SimulateTransactionResponse
 ): StellarSdk.xdr.ScVal | undefined {
   if (
-    StellarSdk.rpc.Api.isSimulationSuccess(simulation) &&
-    simulation.result?.retval
+    (StellarSdk.rpc.Api.isSimulationSuccess(simulation) || (simulation as any)?.result?.retval) &&
+    (simulation as any)?.result?.retval
   ) {
-    return simulation.result.retval;
+    return (simulation as any).result.retval;
   }
   return undefined;
 }
@@ -486,6 +603,32 @@ export class TypedBridgeWatchContractSdk extends BridgeWatchContractSdk {
     const val = extractResultScVal(result);
     if (!val || isScvVoid(val)) return null;
     return parseAssetHealth(val);
+  }
+
+  /**
+   * Query many assets in a single RPC simulation via the batch query contract
+   * (contracts/soroban/src/batch_query.rs) instead of one request per asset.
+   * Pass `batchContractId` when the batch contract is deployed separately.
+   */
+  async getBatchAssetHealth(
+    assetCodes: string[],
+    batchContractId?: string
+  ): Promise<BatchAssetResult[]> {
+    if (assetCodes.length === 0 || assetCodes.length > MAX_BATCH_QUERY_SIZE) {
+      throw new BridgeWatchQueryError(
+        `assetCodes must contain 1-${MAX_BATCH_QUERY_SIZE} entries, got ${assetCodes.length}`
+      );
+    }
+    const result = await this.queryMethod({
+      method: "batch_query_assets",
+      args: [scvVec(assetCodes.map(scvString))],
+      contractId: batchContractId,
+    });
+    const val = extractResultScVal(result);
+    if (!val) {
+      throw new BridgeWatchQueryError("Batch asset query simulation failed", result);
+    }
+    return parseBatchAssetResults(assetCodes, val);
   }
 
   async getHealthScoreResult(
@@ -865,4 +1008,316 @@ export class TypedBridgeWatchContractSdk extends BridgeWatchContractSdk {
       ],
     });
   }
+
+  // ---------------------------------------------------------
+  // ZK proof verification (issue #1244)
+  // ---------------------------------------------------------
+
+  private zkProofToScVal(proof: ZkProofParams): StellarSdk.xdr.ScVal {
+    return scvMap([
+      { key: "scheme", val: scvString(proof.scheme) },
+      { key: "curve", val: scvString(proof.curve) },
+      { key: "pi_a", val: scvBytes(proof.pi_a) },
+      { key: "pi_b", val: scvBytes(proof.pi_b) },
+      { key: "pi_c", val: scvBytes(proof.pi_c) },
+      { key: "commitment_hash", val: scvBytesN32(proof.commitment_hash) },
+    ]);
+  }
+
+  private zkPublicInputsToScVal(
+    inputs: ZkPublicInputsParams
+  ): StellarSdk.xdr.ScVal {
+    return scvMap([
+      { key: "total_reserves", val: scvI128(inputs.total_reserves) },
+      { key: "on_chain_supply", val: scvI128(inputs.on_chain_supply) },
+      { key: "min_reserve_ratio_bps", val: scvU32(inputs.min_reserve_ratio_bps) },
+      { key: "timestamp", val: scvU64(inputs.timestamp) },
+      { key: "bridge_id", val: scvString(inputs.bridge_id) },
+      { key: "asset_code", val: scvString(inputs.asset_code) },
+    ]);
+  }
+
+  /**
+   * Verify a ZK reserve proof on-chain and record an attestation.
+   *
+   * Calls the zk_verifier contract's `verify_zk_reserve_proof`. Because the
+   * contract function requires the operator's authorization, this helper
+   * builds, simulates, assembles, signs with the operator's secret, and
+   * submits the transaction. Returns the attestation id on success.
+   */
+  async verifyZkProof(params: {
+    operator: string;
+    operatorSecret: string;
+    proof: ZkProofParams;
+    publicInputs: ZkPublicInputsParams;
+  }): Promise<ZkProofVerificationResult> {
+    const result = await this.invokeAndSend(
+      {
+        sourcePublicKey: params.operator,
+        method: "verify_zk_reserve_proof",
+        args: [
+          scvAddress(params.operator),
+          this.zkProofToScVal(params.proof),
+          this.zkPublicInputsToScVal(params.publicInputs),
+        ],
+      },
+      params.operatorSecret
+    );
+
+    const valid = (result.status as string) === "SUCCESS";
+    return { valid, attestationId: undefined };
+  }
+
+  /** Build (not submit) a verify_zk_reserve_proof transaction. */
+  async buildVerifyZkProofTransaction(params: {
+    operator: string;
+    proof: ZkProofParams;
+    publicInputs: ZkPublicInputsParams;
+  }): ReturnType<BridgeWatchContractSdk["buildInvokeTransaction"]> {
+    return this.buildInvokeTransaction({
+      sourcePublicKey: params.operator,
+      method: "verify_zk_reserve_proof",
+      args: [
+        scvAddress(params.operator),
+        this.zkProofToScVal(params.proof),
+        this.zkPublicInputsToScVal(params.publicInputs),
+      ],
+    });
+  }
+
+  // ---------------------------------------------------------
+  // MMR proof verification (issue #1244)
+  // ---------------------------------------------------------
+
+  private mmrProofToScVal(proof: MmrProofParams): StellarSdk.xdr.ScVal {
+    return scvMap([
+      { key: "leaf_hash", val: scvBytesN32(proof.leaf_hash) },
+      { key: "leaf_index", val: scvU64(proof.leaf_index) },
+      {
+        key: "siblings",
+        val: scvVec(proof.siblings.map((s) => scvBytesN32(s))),
+      },
+      {
+        key: "peaks_snapshot",
+        val: scvVec(proof.peaks_snapshot.map((p) => scvBytesN32(p))),
+      },
+      { key: "local_peak_pos", val: scvU32(proof.local_peak_pos) },
+    ]);
+  }
+
+  /**
+   * Verify an MMR inclusion proof. When `expectedRoot` is omitted the proof
+   * is verified against the contract's CURRENT accumulated root
+   * (`verify_against_current`); otherwise it is checked against the
+   * caller-supplied root (`verify_mmr_proof`). Both are permissionless
+   * reads.
+   */
+  async verifyMmrProof(
+    proof: MmrProofParams,
+    expectedRoot?: string
+  ): Promise<boolean> {
+    const result =
+      expectedRoot !== undefined
+        ? await this.queryMethod({
+            method: "verify_mmr_proof",
+            args: [this.mmrProofToScVal(proof), scvBytesN32(expectedRoot)],
+          })
+        : await this.queryMethod({
+            method: "verify_against_current",
+            args: [this.mmrProofToScVal(proof)],
+          });
+    const val = extractResultScVal(result);
+    if (!val) return false;
+    return val.switch().name === "scvBool" && parseScvBool(val);
+  }
+}
+
+// ============================================================
+// Typed contract event decoding (issue #1290)
+// ============================================================
+//
+// `onEvent` (subscribeToEvents / subscribeToEventsWebSocket in client.ts)
+// hands consumers the raw event object, whose `topic`/`value` fields carry
+// XDR `ScVal`s (as base64 strings or already-parsed objects, depending on
+// the transport). Without these helpers, every consumer has to know each
+// event's exact topic name, topic order, and value shape and re-derive the
+// same decoding boilerplate. Topic names and payload shapes below are read
+// directly from the emitting contract (contracts/soroban/src/lib.rs):
+//   health_up  -> topics [Symbol("health_up"), asset_code: String], value: u32
+//   price_dev  -> topics [Symbol("price_dev"), asset_code: String], value: i128
+//   em_pause   -> topics [Symbol("em_pause"),  caller: Address],    value: String
+
+export const HEALTH_UPDATE_EVENT_TOPIC = "health_up";
+export const PRICE_DEVIATION_EVENT_TOPIC = "price_dev";
+export const CIRCUIT_BREAKER_EVENT_TOPIC = "em_pause";
+
+/**
+ * Shape of the raw event object passed to `onEvent` by
+ * `subscribeToEvents`/`subscribeToEventsWebSocket`. `topic`/`value` entries
+ * may be base64 XDR strings or already-decoded `ScVal`s.
+ */
+export interface RawContractEvent {
+  type?: string;
+  ledger?: number;
+  ledgerClosedAt?: string;
+  contractId?: string;
+  id?: string;
+  pagingToken?: string;
+  topic: Array<string | StellarSdk.xdr.ScVal>;
+  value: string | StellarSdk.xdr.ScVal;
+  inSuccessfulContractCall?: boolean;
+  txHash?: string;
+}
+
+export interface HealthUpdateEvent {
+  type: "health_up";
+  assetCode: string;
+  healthScore: number;
+  ledger?: number;
+  txHash?: string;
+}
+
+export interface PriceDeviationEvent {
+  type: "price_dev";
+  assetCode: string;
+  deviationBps: bigint;
+  ledger?: number;
+  txHash?: string;
+}
+
+export interface CircuitBreakerEvent {
+  type: "em_pause";
+  caller: string;
+  reason: string;
+  ledger?: number;
+  txHash?: string;
+}
+
+export type BridgeWatchContractEvent =
+  | HealthUpdateEvent
+  | PriceDeviationEvent
+  | CircuitBreakerEvent;
+
+/** True if `event.topic[0]` decodes to the given topic symbol name. */
+function matchesTopic(
+  event: RawContractEvent,
+  topicName: string
+): boolean {
+  const first = event.topic[0];
+  if (first === undefined) return false;
+  try {
+    return parseScvSymbol(toScVal(first)) === topicName;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as a `health_up` event, or returns `null`
+ * if it isn't one (wrong topic, or malformed).
+ */
+export function parseHealthUpdateEvent(
+  event: unknown
+): HealthUpdateEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, HEALTH_UPDATE_EVENT_TOPIC)) return null;
+  const assetCodeTopic = raw.topic[1];
+  if (assetCodeTopic === undefined) return null;
+  try {
+    return {
+      type: "health_up",
+      assetCode: parseScvString(toScVal(assetCodeTopic)),
+      healthScore: parseScvU32(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as a `price_dev` event, or returns `null`
+ * if it isn't one (wrong topic, or malformed).
+ */
+export function parsePriceDeviationEvent(
+  event: unknown
+): PriceDeviationEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, PRICE_DEVIATION_EVENT_TOPIC)) return null;
+  const assetCodeTopic = raw.topic[1];
+  if (assetCodeTopic === undefined) return null;
+  try {
+    return {
+      type: "price_dev",
+      assetCode: parseScvString(toScVal(assetCodeTopic)),
+      deviationBps: parseScvI128(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload as an `em_pause` (circuit breaker) event,
+ * or returns `null` if it isn't one (wrong topic, or malformed).
+ */
+export function parseCircuitBreakerEvent(
+  event: unknown
+): CircuitBreakerEvent | null {
+  const raw = event as RawContractEvent;
+  if (!raw || !Array.isArray(raw.topic) || raw.value === undefined) {
+    return null;
+  }
+  if (!matchesTopic(raw, CIRCUIT_BREAKER_EVENT_TOPIC)) return null;
+  const callerTopic = raw.topic[1];
+  if (callerTopic === undefined) return null;
+  try {
+    return {
+      type: "em_pause",
+      caller: parseScvAddress(toScVal(callerTopic)),
+      reason: parseScvString(toScVal(raw.value)),
+      ledger: raw.ledger,
+      txHash: raw.txHash,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes a raw `onEvent` payload into whichever typed event it matches, or
+ * `null` if it's none of the three known topics — lets a single `onEvent`
+ * handler dispatch on `.type` instead of calling each `parseXxxEvent`
+ * individually.
+ *
+ * @example
+ * sdk.subscribeToEvents({
+ *   onEvent: (raw) => {
+ *     const event = parseBridgeWatchEvent(raw);
+ *     if (!event) return;
+ *     switch (event.type) {
+ *       case "health_up": return handleHealthUpdate(event);
+ *       case "price_dev": return handlePriceDeviation(event);
+ *       case "em_pause": return handleCircuitBreaker(event);
+ *     }
+ *   },
+ * });
+ */
+export function parseBridgeWatchEvent(
+  event: unknown
+): BridgeWatchContractEvent | null {
+  return (
+    parseHealthUpdateEvent(event) ??
+    parsePriceDeviationEvent(event) ??
+    parseCircuitBreakerEvent(event)
+  );
 }

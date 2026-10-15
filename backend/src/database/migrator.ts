@@ -65,7 +65,7 @@ export class Migrator {
   async up(): Promise<void> {
     this.warnIfProduction("running migrations");
 
-    const [batchNo, migrations] = await this.db.migrate.latest();
+    const [batchNo, migrations] = await this.db.migrate.latest({ disableTransactions: false });
 
     if (migrations.length === 0) {
       logger.info("Already up to date — no pending migrations.");
@@ -89,7 +89,10 @@ export class Migrator {
   async rollback(all = false): Promise<void> {
     this.warnIfProduction("rolling back migrations");
 
-    const [batchNo, migrations] = await this.db.migrate.rollback(undefined, all);
+    const [batchNo, migrations] = await this.db.migrate.rollback(
+      { disableTransactions: false },
+      all
+    );
 
     if (migrations.length === 0) {
       logger.info("Nothing to roll back.");

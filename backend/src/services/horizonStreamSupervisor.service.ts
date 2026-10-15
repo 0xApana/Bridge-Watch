@@ -3,6 +3,7 @@ import { logger } from "../utils/logger.js";
 import { config as appConfig } from "../config/index.js";
 import { getMetricsService } from "./metrics.service.js";
 import { ingestionQueueManager } from "./ingestionQueueManager.service.js";
+import { getDatabase } from "../database/connection.js";
 
 export type StreamStatus = "connecting" | "connected" | "reconnecting" | "closed" | "error";
 
@@ -181,6 +182,9 @@ export class HorizonStreamSupervisor extends EventEmitter {
       this.gapStartedAt = null;
       logger.info({ streamId: this.streamId, activeNode: activeUrl }, "Horizon stream connected");
 
+      // Check for sequence gaps on reconnection
+      void this._checkForSequenceGapsAndBackfill();
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -314,6 +318,73 @@ export class HorizonStreamSupervisor extends EventEmitter {
     };
   }
 
+  /**
+   * Check for ingestion sequence gaps and initiate backfill if needed
+   * Compares the upstream Horizon latest_ledger with the stored watermark
+   */
+  private async _checkForSequenceGapsAndBackfill(): Promise<void> {
+    try {
+      const db = getDatabase();
+
+      // Get the last committed ledger from database
+      const watermark = await db("ingestion_watermarks")
+        .where({ stream_id: this.streamId })
+        .orderBy("ledger_sequence", "desc")
+        .first();
+
+      if (!watermark) {
+        logger.debug(
+          { streamId: this.streamId },
+          "No previous watermark found — starting fresh ingestion"
+        );
+        return;
+      }
+
+      const lastCommittedLedger = watermark.ledger_sequence;
+      const upstreamLedger = this._lastKnownLedger || 0;
+
+      // Check if there's a gap
+      if (upstreamLedger - lastCommittedLedger > 1) {
+        const gapSize = upstreamLedger - lastCommittedLedger - 1;
+        logger.warn(
+          {
+            streamId: this.streamId,
+            lastCommittedLedger,
+            upstreamLedger,
+            gapSize,
+          },
+          "Ingestion sequence gap detected — initiating automatic backfill"
+        );
+
+        // Emit gap event for backfill orchestrator to pick up
+        this.emit("sequenceGap", {
+          streamId: this.streamId,
+          startLedger: lastCommittedLedger + 1,
+          endLedger: upstreamLedger,
+          gapSize,
+        });
+
+        // Record gap detection metric
+        try {
+          const metrics = getMetricsService();
+          if (metrics) {
+            metrics.workerRestartsTotal?.inc({
+              worker: this.streamId,
+              reason: "sequence-gap-detected",
+            });
+          }
+        } catch {
+          // metrics not critical
+        }
+      }
+    } catch (err) {
+      logger.error(
+        { streamId: this.streamId, err },
+        "Failed to check for sequence gaps"
+      );
+    }
+  }
+
   private _scheduleReconnect(): void {
     if (this.closed) return;
 
@@ -336,6 +407,8 @@ export class HorizonStreamSupervisor extends EventEmitter {
         activeNode: nextNode,
         isPrimary: this.isPrimaryActive(),
       });
+
+      getMetricsService().workerRestartsTotal.inc({ worker: this.streamId, reason: "failover" });
     }
 
     if (this.reconnectCount >= this.maxReconnectAttempts) {
@@ -344,6 +417,7 @@ export class HorizonStreamSupervisor extends EventEmitter {
         "Horizon stream max reconnect attempts reached — emitting outage alert"
       );
       this.emit("outage", { streamId: this.streamId, reconnectCount: this.reconnectCount });
+      getMetricsService().workerRestartsTotal.inc({ worker: this.streamId, reason: "max-attempts-exhausted" });
       return;
     }
 
@@ -358,6 +432,8 @@ export class HorizonStreamSupervisor extends EventEmitter {
       { streamId: this.streamId, attempt: this.reconnectCount, backoffMs: Math.round(backoff) },
       "Scheduling Horizon stream reconnect"
     );
+
+    getMetricsService().workerRestartsTotal.inc({ worker: this.streamId, reason: "reconnect-scheduled" });
 
     this.reconnectTimer = setTimeout(() => {
       if (!this.closed) this._connect();
@@ -407,6 +483,8 @@ export class HorizonStreamSupervisor extends EventEmitter {
             activeNode: primaryUrl,
             isPrimary: true,
           });
+
+          getMetricsService().workerRestartsTotal.inc({ worker: this.streamId, reason: "failback" });
 
           this._connect();
         }

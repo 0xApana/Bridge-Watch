@@ -2,6 +2,8 @@ import type { Knex } from "knex";
 import { getDatabase } from "../database/connection.js";
 import { logger } from "../utils/logger.js";
 
+const QUERY_TIMEOUT_MS = 30_000;
+
 export type SearchEntityType = "asset" | "bridge" | "incident" | "alert";
 
 export interface SearchResult {
@@ -184,7 +186,8 @@ export class SearchService {
     let query = this.db("search_analytics")
       .select("query", "time")
       .orderBy("time", "desc")
-      .limit(limit * 5);
+      .limit(limit * 5)
+      .timeout(QUERY_TIMEOUT_MS);
 
     if (userId) {
       query = query.where("user_id", userId);
@@ -212,13 +215,15 @@ export class SearchService {
     resultsCount = 0,
     filters: Record<string, unknown> = {}
   ): Promise<void> {
-    await this.db("search_analytics").insert({
-      query,
-      user_id: userId ?? null,
-      results_count: resultsCount,
-      filters: JSON.stringify(filters),
-      time: new Date(),
-    });
+    await this.db("search_analytics")
+      .insert({
+        query,
+        user_id: userId ?? null,
+        results_count: resultsCount,
+        filters: JSON.stringify(filters),
+        time: new Date(),
+      })
+      .timeout(QUERY_TIMEOUT_MS);
   }
 
   async trackResultClick(query: string, resultId: string, userId?: string): Promise<void> {
@@ -265,7 +270,8 @@ export class SearchService {
     const metadataRows = await this.db("search_index_metadata")
       .select("*")
       .whereIn("entity_type", INDEX_ENTITY_TYPES)
-      .orderBy("entity_type", "asc");
+      .orderBy("entity_type", "asc")
+      .timeout(QUERY_TIMEOUT_MS);
 
     return metadataRows.map((row) => ({
       entityType: String(row.entity_type),
