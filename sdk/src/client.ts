@@ -18,6 +18,24 @@ import type { ApiCapabilities, ApiContract, ApiContractSummary, ApiVersion } fro
 import { compatibilityHeaders } from "./compatibility";
 import { injectTraceHeaders, type TraceContextOptions } from "./tracecontext";
 
+export interface ClientRetryConfig {
+  /**
+   * Maximum number of retries after the first attempt.
+   * Default: 3.
+   */
+  maxRetries?: number;
+  /**
+   * Base delay between retries in milliseconds.
+   * Default: 1000.
+   */
+  baseDelayMs?: number;
+  /**
+   * Maximum delay between retries in milliseconds.
+   * Default: 10000.
+   */
+  maxDelayMs?: number;
+}
+
 export class BridgeWatchContractSdk {
   /**
    * `tracing` is deliberately left optional rather than `Required<>`-ed:
@@ -26,16 +44,28 @@ export class BridgeWatchContractSdk {
    */
   private readonly config: Required<Omit<BridgeWatchSdkConfig, "tracing">> &
     Pick<BridgeWatchSdkConfig, "tracing">;
+  private readonly retryConfig: Required<ClientRetryConfig>;
   private readonly server: StellarSdk.rpc.Server;
   private connected = false;
 
-  constructor(config: BridgeWatchSdkConfig) {
+  constructor(
+    config: BridgeWatchSdkConfig & { retryConfig?: ClientRetryConfig },
+    retryConfig?: ClientRetryConfig
+  ) {
     this.config = {
       allowHttp: false,
       defaultFee: "100000",
       defaultTimeoutSeconds: 30,
       ...config,
       apiUrl: config.apiUrl ?? config.rpcUrl,
+    };
+
+    const mergedRetry = retryConfig ?? config.retryConfig;
+    this.retryConfig = {
+      // maxRetries represents the maximum number of retries after the first attempt.
+      maxRetries: mergedRetry?.maxRetries ?? 3,
+      baseDelayMs: mergedRetry?.baseDelayMs ?? 1000,
+      maxDelayMs: mergedRetry?.maxDelayMs ?? 10000,
     };
 
     this.server = new StellarSdk.rpc.Server(this.config.rpcUrl, {
@@ -56,6 +86,7 @@ export class BridgeWatchContractSdk {
   }
 
   private async fetchCompatibility<T>(path: string, version?: ApiVersion): Promise<T> {
+    const url = `${this.config.apiUrl.replace(/\/$/, "")}/api/v1/compatibility${path}`;
     // Propagate W3C trace context so the backend can correlate this request
     // with the caller's trace. An explicit per-call context wins over config.
     const headers = injectTraceHeaders(
@@ -63,11 +94,35 @@ export class BridgeWatchContractSdk {
       this.config.tracing as TraceContextOptions | undefined
     );
 
-    const response = await fetch(`${this.config.apiUrl.replace(/\/$/, "")}/api/v1/compatibility${path}`, {
-      headers,
-    });
-    if (!response.ok) throw new BridgeWatchConnectionError(`Compatibility request failed: ${response.status}`);
-    return response.json() as Promise<T>;
+    // maxRetries represents the maximum number of retries after the first attempt.
+    const maxRetries = this.retryConfig.maxRetries;
+    let attempt = 0;
+
+    while (true) {
+      const response = await fetch(url, { headers });
+
+      if (response.ok) {
+        return response.json() as Promise<T>;
+      }
+
+      // Retry only on HTTP 429 and 5xx responses. Do not retry other 4xx responses.
+      const isRetryable =
+        response.status === 429 || (response.status >= 500 && response.status <= 599);
+
+      if (!isRetryable || attempt >= maxRetries) {
+        throw new BridgeWatchConnectionError(`Compatibility request failed: ${response.status}`);
+      }
+
+      attempt++;
+
+      // Exponential backoff with jitter between retries.
+      const exponentialDelay = this.retryConfig.baseDelayMs * Math.pow(2, attempt - 1);
+      const cappedDelay = Math.min(exponentialDelay, this.retryConfig.maxDelayMs);
+      const jitter = Math.random() * (cappedDelay * 0.1);
+      const delay = Math.min(cappedDelay + jitter, this.retryConfig.maxDelayMs);
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
   }
 
   async connect(): Promise<SdkHealth> {
