@@ -534,9 +534,9 @@ describe("Dashboard Page", () => {
 
       renderDashboard();
 
-      expect(screen.getByText("Loading bridges...")).toBeInTheDocument();
-      expect(screen.getByTestId("summary-card-total-value-locked")).toHaveTextContent("--");
-      expect(screen.getByTestId("summary-card-monitored-assets")).toHaveTextContent("--");
+      expect(screen.getByRole("status", { name: "Loading bridges" })).toBeInTheDocument();
+      expect(screen.getByTestId("summary-card-total-value-locked")).toHaveTextContent("Loading...");
+      expect(screen.getByTestId("summary-card-monitored-assets")).toHaveTextContent("Loading...");
     });
 
     it("displays empty state message when no bridges match filters", async () => {

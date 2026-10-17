@@ -108,6 +108,6 @@ describe("MockBridgeWatchClient sandbox harness", () => {
     expect(capabilities.features).toContain("mock-sandbox");
 
     const versions = await client.getApiVersions();
-    expect(versions.current).toBe("1.0.0");
+    expect(versions.current).toBe("v1");
   });
 });

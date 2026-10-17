@@ -38,6 +38,7 @@ import MetricsInspectorDrawer, {
 import DashboardSharingModal from "../components/dashboard/DashboardSharingModal";
 import AssetInsightsTray from "../components/asset/AssetInsightsTray";
 import { useUIStore } from "../stores/uiStore";
+import { SkeletonCard } from "../components/Skeleton";
 import type { AssetWithHealth, Bridge, FilterStatus } from "../types";
 
 type DashboardView = "overview" | "assets" | "bridges";
@@ -707,7 +708,21 @@ export default function Dashboard() {
               </Link>
             </div>
             {bridgesLoading ? (
-              <p className="text-stellar-text-secondary">Loading bridges...</p>
+              <div
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+                role="status"
+                aria-label="Loading bridges"
+              >
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <SkeletonCard
+                    key={i}
+                    showHeader={false}
+                    rows={4}
+                    height={160}
+                    ariaLabel="Loading bridge card"
+                  />
+                ))}
+              </div>
             ) : filteredBridges.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredBridges.map((bridge) => (
