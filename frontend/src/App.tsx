@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import { LoadingFallback } from "./components/LoadingFallback";
@@ -122,6 +122,14 @@ function NotificationInitializer() {
   return null;
 }
 
+function PageBoundary({ page, children }: { page: string; children: ReactNode }) {
+  return (
+    <ComponentErrorBoundary severity="high" context={`page:${page}`}>
+      {children}
+    </ComponentErrorBoundary>
+  );
+}
+
 function App() {
   return (
     <GlobalErrorBoundary>
@@ -132,26 +140,75 @@ function App() {
             <Route path="/" element={<Landing />} />
 
             <Route element={<Layout />}>
-              <Route path="/dashboard" element={<Dashboard />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <PageBoundary page="dashboard">
+                    <Dashboard />
+                  </PageBoundary>
+                }
+              />
               <Route path="/assets/:symbol" element={<AssetDetail />} />
               <Route path="/bridges" element={<Bridges />} />
-              <Route path="/incidents" element={<Incidents />} />
+              <Route
+                path="/incidents"
+                element={
+                  <PageBoundary page="incidents">
+                    <Incidents />
+                  </PageBoundary>
+                }
+              />
               <Route path="/incidents/replay/:id" element={<IncidentReplay />} />
-              <Route path="/alerts" element={<Alerts />} />
+              <Route
+                path="/alerts"
+                element={
+                  <PageBoundary page="alerts">
+                    <Alerts />
+                  </PageBoundary>
+                }
+              />
               <Route path="/alert-playbooks" element={<AlertPlaybookViewer />} />
-              <Route path="/transactions" element={<Transactions />} />
-              <Route path="/analytics" element={<Analytics />} />
+              <Route
+                path="/transactions"
+                element={
+                  <PageBoundary page="transactions">
+                    <Transactions />
+                  </PageBoundary>
+                }
+              />
+              <Route
+                path="/analytics"
+                element={
+                  <PageBoundary page="analytics">
+                    <Analytics />
+                  </PageBoundary>
+                }
+              />
               <Route path="/analytics/metric-builder" element={<CustomMetricBuilder />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/watchlist" element={<WatchlistPage />} />
-              <Route path="/watchlists" element={<WatchlistsPage />} />
+              <Route
+                path="/watchlists"
+                element={
+                  <PageBoundary page="watchlists">
+                    <WatchlistsPage />
+                  </PageBoundary>
+                }
+              />
               <Route path="/settings" element={<Settings />} />
               <Route path="/admin/api-keys" element={<ApiKeys />} />
               <Route path="/admin/alert-routing" element={<AlertRoutingAdmin />} />
               <Route path="/admin/access-audit" element={<OperationalAccessAudit />} />
               <Route path="/supply-chain" element={<SupplyChain />} />
               <Route path="/bridge-topology" element={<BridgeTopologyExplorer />} />
-              <Route path="/reconciliation" element={<Reconciliation />} />
+              <Route
+                path="/reconciliation"
+                element={
+                  <PageBoundary page="reconciliation">
+                    <Reconciliation />
+                  </PageBoundary>
+                }
+              />
               <Route path="/api-docs" element={<ApiDocs />} />
               <Route path="/help" element={<Help />} />
               <Route path="/release-notes" element={<ReleaseNotes />} />

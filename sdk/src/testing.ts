@@ -184,6 +184,7 @@ export class MockBridgeWatchClient {
       allowHttp: options.allowHttp ?? true,
       defaultFee: options.defaultFee ?? "100",
       defaultTimeoutSeconds: options.defaultTimeoutSeconds ?? 30,
+      tracing: options.tracing ?? {},
     };
   }
 
@@ -244,25 +245,58 @@ export class MockBridgeWatchClient {
     };
   }
 
-  async getApiContract(version?: ApiVersion): Promise<ApiContract> {
+  async getApiContract(
+    version?: ApiVersion
+  ): Promise<ApiContract & { checksum: string; endpoints: string[] }> {
+    const resolved = version ?? "v1";
     return {
-      version: version ?? "1.0.0",
+      version: resolved,
+      mediaType: `application/vnd.bridge-watch.${resolved}+json`,
+      status: "current",
+      releasedAt: "2026-01-01T00:00:00Z",
+      pagination: {
+        style: "page-limit",
+        defaultLimit: 25,
+        maximumLimit: 100,
+        totalType: "integer",
+      },
+      errors: { contentType: "application/json", fields: ["error", "message"] },
+      timestamps: { format: "RFC3339", timezone: "UTC" },
+      numericPrecision: { jsonNumbers: "IEEE-754 double", exactValues: "decimal strings" },
+      capabilities: { pagination: true, streaming: true, "mock-sandbox": true },
+      fingerprint: "mock-fingerprint-abc-123",
       checksum: "mock-checksum-abc-123",
       endpoints: ["/api/v1/bridges", "/api/v1/assets", "/api/v1/health"],
     };
   }
 
-  async getApiCapabilities(version?: ApiVersion): Promise<ApiCapabilities> {
+  async getApiCapabilities(
+    version?: ApiVersion
+  ): Promise<ApiCapabilities & { features: string[] }> {
     return {
-      version: version ?? "1.0.0",
+      version: version ?? "v1",
+      fingerprint: "mock-fingerprint-abc-123",
+      capabilities: {
+        "streaming-exports": true,
+        "continuous-aggregates": true,
+        "mock-sandbox": true,
+      },
       features: ["streaming-exports", "continuous-aggregates", "mock-sandbox"],
     };
   }
 
   async getApiVersions(): Promise<{ current: ApiVersion; versions: ApiContractSummary[] }> {
     return {
-      current: "1.0.0",
-      versions: [{ version: "1.0.0", releaseDate: "2026-01-01" }],
+      current: "v1",
+      versions: [
+        {
+          version: "v1",
+          mediaType: "application/vnd.bridge-watch.v1+json",
+          status: "current",
+          fingerprint: "mock-fingerprint-abc-123",
+          sunsetAt: null,
+        },
+      ],
     };
   }
 
