@@ -118,6 +118,10 @@ const envSchema = z.object({
   RATE_LIMIT_ENABLE_MONITORING: z.coerce.boolean().default(true),
   RATE_LIMIT_ADMIN_API_KEY_PREFIX: z.string().default("admin_"),
 
+  // Test helpers
+  // When true, enable rate limiting in test environments. Default: false
+  ENABLE_RATE_LIMIT_IN_TESTS: z.coerce.boolean().default(false),
+
   // Per-endpoint rate limits (requests per window)
   RATE_LIMIT_ENDPOINT_ASSETS: z.coerce.number().default(200),
   RATE_LIMIT_ENDPOINT_BRIDGES: z.coerce.number().default(150),

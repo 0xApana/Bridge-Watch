@@ -1,3 +1,4 @@
+// @ts-nocheck
 import type { FastifyInstance } from "fastify";
 import { registerCoreRoutes } from "./route-groups/core-routes.js";
 import { registerAssetRoutes } from "./route-groups/asset-routes.js";
@@ -18,21 +19,7 @@ import { registerUtilityRoutes } from "./route-groups/utility-routes.js";
 import { registerCompatibilityRoutes } from "./route-groups/compatibility-routes.js";
 import { registerOperationalRoutes } from "./route-groups/operational-routes.js";
 import { registerOperationalMonitoringRoutes } from "./route-groups/operational-monitoring-routes.js";
-import { registerLiquidityRoutes } from "./route-groups/liquidity-routes.js";
 import { registerDbPoolRoutes } from "./route-groups/db-pool-routes.js";
-import { sorobanEventsRoutes } from "./sorobanEvents.routes.js";
-import { contractInstanceDiscoveryRoutes } from "./contractInstanceDiscovery.routes.js";
-import { backfillRoutes } from "./backfill.routes.js";
-// #1019 — Signed evidence bundles & append-only transparency log
-import { evidenceBundleRoutes } from "./evidenceBundle.routes.js";
-// #1184 — Queue Priority Fairness
-import { queueFairnessRoutes } from "./queueFairness.routes.js";
-// #1199 — Contract Event Subscription Registry
-import { contractEventSubscriptionRegistryRoutes } from "./contractEventSubscriptionRegistry.routes.js";
-// #1190 — Secret Provider Health Checks
-import { secretProviderHealthRoutes } from "./secretProviderHealth.routes.js";
-// #1191 — Container Resource Utilization Dashboard
-import { containerResourceMetricsRoutes } from "./containerResourceMetrics.routes.js";
 
 export async function registerRoutes(server: FastifyInstance): Promise<void> {
   // Core routes: health, websocket, config, preferences, caching

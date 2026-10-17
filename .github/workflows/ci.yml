@@ -113,6 +113,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate k8s secrets are SOPS-encrypted
+        run: |
+          if [ -f k8s/secret.yaml ]; then
+            if ! grep -q '^sops:' k8s/secret.yaml; then
+              echo "k8s/secret.yaml is not SOPS-encrypted (missing sops: metadata)."
+              exit 1
+            fi
+            echo "k8s/secret.yaml contains sops metadata"
+          else
+            echo "k8s/secret.yaml not found — skipping SOPS check"
+          fi
+
       - name: Initialize command log archive
         run: |
           mkdir -p "$COMMAND_LOG_DIR"

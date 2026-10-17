@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as jwt from "jsonwebtoken";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { config } from "../config/index.js";

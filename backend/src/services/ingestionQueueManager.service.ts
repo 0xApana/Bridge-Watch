@@ -1,9 +1,10 @@
 import crypto from "crypto";
+import type { Knex } from "knex";
 import { getDatabase } from "../database/connection.js";
 import { config } from "../config/index.js";
 import { logger } from "../utils/logger.js";
 import { ingestionWatermarkCoordinator } from "./ingestionWatermarkCoordinator.service.js";
-import { queueFairnessService, initDRRState, drrNextLane, type LaneName } from "./queueFairness.service.js";
+import type { IngestionJobRow, UnconfirmedEventRow } from "../types/ingestion.types.js";
 
 export type IngestionJobType = "alert" | "event" | "metric";
 
@@ -142,7 +143,7 @@ export class IngestionQueueManager {
       .orWhere(function () {
         this.where({ status: "failed" })
           .where("attempts", "<", db.raw("max_attempts"))
-          .where((qb: any) => {
+          .where((qb: Knex.QueryBuilder) => {
             qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
           });
       })
@@ -157,101 +158,7 @@ export class IngestionQueueManager {
     }
   }
 
-  /**
-   * Fair scheduling: uses Deficit Round Robin with minimum share guarantees
-   * to prevent starvation of lower-priority lanes while still preferring
-   * higher-priority work proportionally.
-   */
-  public async processPendingJobsFair(): Promise<void> {
-    if (this.processingCount >= this.concurrencyLimit) {
-      return;
-    }
-
-    const db = getDatabase();
-    const availableSlots = this.concurrencyLimit - this.processingCount;
-
-    // Map JobPriority to lane names
-    const priorityToLane: Record<number, LaneName> = {
-      4: "critical", // CRITICAL
-      3: "high",     // HIGH
-      2: "medium",   // MEDIUM
-      1: "low",      // LOW
-    };
-
-    // Get counts per lane
-    const laneCounts: Record<LaneName, number> = { critical: 0, high: 0, medium: 0, low: 0 };
-    for (const [priority, lane] of Object.entries(priorityToLane)) {
-      const count = await db("ingestion_jobs")
-        .where({ status: "pending" })
-        .andWhere({ priority: Number(priority) })
-        .count("id as cnt")
-        .first();
-      laneCounts[lane] = Number(count?.cnt ?? 0);
-    }
-
-    // Also include retryable failed jobs
-    for (const [priority, lane] of Object.entries(priorityToLane)) {
-      const count = await db("ingestion_jobs")
-        .where({ status: "failed" })
-        .andWhere({ priority: Number(priority) })
-        .andWhere("attempts", "<", db.raw("max_attempts"))
-        .andWhere((qb: any) => {
-          qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
-        })
-        .count("id as cnt")
-        .first();
-      laneCounts[lane] += Number(count?.cnt ?? 0);
-    }
-
-    // Initialize or get DRR state (in production, persist this)
-    const drrState = initDRRState(1);
-    const policies = await queueFairnessService.getAllPolicies();
-
-    // Plan which lanes to serve using DRR
-    const plan: LaneName[] = [];
-    for (let i = 0; i < availableSlots; i++) {
-      const lane = drrNextLane(drrState, laneCounts, policies);
-      plan.push(lane);
-      // Decrement the virtual depth so we don't over-plan
-      if (laneCounts[lane] > 0) laneCounts[lane]--;
-    }
-
-    // Execute the plan
-    for (const lane of plan) {
-      const priority = Object.entries(priorityToLane).find(([, l]) => l === lane)?.[0];
-      if (!priority) continue;
-
-      const row = await db("ingestion_jobs")
-        .where({ status: "pending" })
-        .andWhere({ priority: Number(priority) })
-        .orderBy("created_at", "asc")
-        .first();
-
-      if (!row) {
-        // Check retryable failed
-        const retryRow = await db("ingestion_jobs")
-          .where({ status: "failed" })
-          .andWhere({ priority: Number(priority) })
-          .andWhere("attempts", "<", db.raw("max_attempts"))
-          .andWhere((qb: any) => {
-            qb.where("next_retry_at", "<=", new Date()).orWhereNull("next_retry_at");
-          })
-          .orderBy("created_at", "asc")
-          .first();
-
-        if (retryRow) {
-          this.processingCount++;
-          this.handleJob(retryRow).finally(() => this.processingCount--);
-        }
-        continue;
-      }
-
-      this.processingCount++;
-      this.handleJob(row).finally(() => this.processingCount--);
-    }
-  }
-
-  private async handleJob(row: any): Promise<void> {
+  private async handleJob(row: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     const jobId = row.id;
     try {
@@ -287,7 +194,7 @@ export class IngestionQueueManager {
     }
   }
 
-  private async processJobLogic(jobRow: any): Promise<void> {
+  private async processJobLogic(jobRow: IngestionJobRow): Promise<void> {
     return;
   }
 
@@ -613,7 +520,7 @@ export class IngestionQueueManager {
     return next;
   }
 
-  private async moveToDeadLetter(jobRow: any): Promise<void> {
+  private async moveToDeadLetter(jobRow: IngestionJobRow): Promise<void> {
     const db = getDatabase();
     await db("dead_letter_jobs").insert({
       id: jobRow.id,
@@ -629,21 +536,13 @@ export class IngestionQueueManager {
     await db("ingestion_jobs").where({ id: jobRow.id }).delete();
     logger.warn({ jobId: jobRow.id }, "Job moved to dead-letter queue");
   }
-
-  private mapUnconfirmedEvent(row: any): UnconfirmedEvent {
-    return {
-      id: row.id,
-      sourceChain: row.source_chain,
-      eventType: row.event_type,
-      payload: typeof row.payload === "string" ? JSON.parse(row.payload) : row.payload,
-      txHash: row.tx_hash,
-      ledgerSequence: Number(row.ledger_sequence),
-      observedLedger: Number(row.observed_ledger),
-      confirmations: Number(row.confirmations),
-      requiredConfirmations: Number(row.required_confirmations),
-      isConfirmed: row.is_confirmed,
-      isRolledBack: row.is_rolled_back,
-    };
+  private mapUnconfirmedEvent(row: UnconfirmedEventRow): UnconfirmedEvent {
+    // Delegate to the shared pure mapper to keep logic testable and reuseable.
+    // Import dynamically to avoid circular import issues at module load time.
+    // (The mapper is lightweight and synchronous.)
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { mapUnconfirmedEventRow } = require("./ingestionQueueManager.mapper.js");
+    return mapUnconfirmedEventRow(row);
   }
 
   private async getCurrentLedger(sourceChain: string): Promise<number | null> {
