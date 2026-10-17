@@ -11,6 +11,73 @@ env:
   CACHE_VERSION: v1
 
 jobs:
+  migration-validation:
+    name: Database migration validation
+    runs-on: ubuntu-latest
+    env:
+      NODE_ENV: test
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: bridge_watch_migration_test
+      POSTGRES_USER: bridge_watch
+      POSTGRES_PASSWORD: test_password
+
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg15
+        env:
+          POSTGRES_DB: bridge_watch_migration_test
+          POSTGRES_USER: bridge_watch
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - run: npm ci
+
+      - name: Validate migration filenames
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t migrations < <(git ls-files 'backend/src/database/migrations/*.ts')
+          duplicates="$(printf '%s\n' "${migrations[@]}" | xargs -n1 basename | sort | uniq -d)"
+          if [[ -n "$duplicates" ]]; then
+            echo "::error::Duplicate migration filenames detected:"
+            echo "$duplicates"
+            exit 1
+          fi
+          for migration in "${migrations[@]}"; do
+            filename="$(basename "$migration")"
+            if [[ ! "$filename" =~ ^([0-9]{3}|[0-9]{8}|[0-9]{14})_[a-z0-9_]+\.ts$ ]]; then
+              echo "::error file=$migration::Migration filename must use a 3, 8, or 14 digit prefix and snake_case name"
+              exit 1
+            fi
+          done
+
+      - name: Validate migration modules
+        working-directory: backend
+        run: npm run migrate:validate
+
+      - name: Apply, roll back, and reapply all migrations
+        working-directory: backend
+        run: |
+          npm run migrate:up
+          npm run migrate:rollback:all
+          npm run migrate:up
+
   # Node.js Job for Backend & Frontend
   node-ci:
     runs-on: ubuntu-latest
